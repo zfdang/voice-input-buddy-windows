@@ -1,58 +1,75 @@
 # 按键监听与快捷键注入规范 (Input & Hotkeys)
 
-本文档阐述 Windows 平台下遥控器全局按键的捕获方案、输入法语音快捷键的注入时序，以及普通按键映射与常用语上屏的实现。
+本文档阐述 Windows 平台下遥控器按键的捕获层级限制、输入法端到端时序保证（首尾音防护）、SendInput 64位结构对齐与 UIPI 权限边界。
 
 ---
 
-## 一、按键事件捕获方案
+## 一、按键事件处理层级与系统限制
 
-电视遥控器在与 Windows 配对后，通常以 **HID 键盘 + 消费控制设备（Consumer Control Device）** 的形式挂载在系统中。
+在 Windows 系统中，捕获和拦截外部 HID 设备的按键存在明确的系统级机制限制。必须清晰区分以下三个层级：
 
-为了在后台无焦点、全屏游戏或任何应用处于活动状态时都能可靠捕获遥控器按键，采用 **Windows Raw Input API** 与 **低级键盘钩子（Low-Level Keyboard Hook）** 双结合方案：
-
-### 1. Raw Input 注册 (HID Consumer 页面)
-通过 `RegisterRawInputDevices` 监听 Consumer Control 页面（Page `0x0C`）：
-```csharp
-[StructLayout(LayoutKind.Sequential)]
-public struct RAWINPUTDEVICE
-{
-    public ushort usUsagePage;
-    public ushort usUsage;
-    public uint dwFlags;
-    public IntPtr hwndTarget;
-}
-
-public void RegisterConsumerDevice(IntPtr hwnd)
-{
-    RAWINPUTDEVICE[] rid = new RAWINPUTDEVICE[1];
-    rid[0].usUsagePage = 0x0C;      // Consumer Control
-    rid[0].usUsage = 0x01;          // Consumer Control Device
-    rid[0].dwFlags = 0x00000100;    // RIDEV_INPUTSINK (即使无焦点也接收)
-    rid[0].hwndTarget = hwnd;
-
-    RegisterRawInputDevices(rid, (uint)rid.Length, (uint)Marshal.SizeOf(typeof(RAWINPUTDEVICE)));
-}
+```text
+┌─────────────────┐       ┌─────────────────┐       ┌─────────────────┐
+│     Level 1     │       │     Level 2     │       │     Level 3     │
+│   全局监听 (Sink)│  ──>  │   附加映射 (Add) │  ──>  │   替换屏蔽 (Block)│
+└─────────────────┘       └─────────────────┘       └─────────────────┘
+ Raw Input (RIDEV)        触发自定动作 + 原始动作   彻底吞掉原始动作 (PoC目标)
+ (可区分遥控器设备)       (如音量键打字且调音量)     (低级钩子无法区分设备)
 ```
 
-### 2. 语音键长按与松开防抖 (Hold-to-Talk)
-* **按下事件（Key Down）**：
-  * 标记语音会话激活；
-  * 向系统注入目标输入法的“开始语音”快捷键；
-  * 向遥控器下发 ATVV `MicrophoneOpen` 指令。
-* **松开事件（Key Up）**：
-  * 向系统注入“结束语音”快捷键；
-  * 向遥控器下发 ATVV `MicrophoneClose` 指令。
-* **蓝牙丢包看门狗（Safety Watchdog）**：
-  * 无线遥控器偶发可能丢失 Key Up 报文。程序内置 60 秒硬超时看门狗，若超过最长单次语音时长未收到心跳或按键变化，自动安全释放会话，防止输入法无限期录音。
+### 1. Level 1: 全局监听 (Passive Monitoring)
+* **技术实现**：通过 Win32 [Raw Input API](https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-rawinputdevice) 注册 Consumer Control 页面（Page `0x0C`），启用 `RIDEV_INPUTSINK` 标志。
+* **特性**：即使当前窗口无焦点，后台也能稳定捕获事件；`RAWINPUT.header.hDevice` 能清晰区分按键是来自遥控器还是主键盘。
+* **边界**：**Raw Input 纯粹作为监听者（Sink），绝不能阻止原始按键继续传递给系统！**
+
+### 2. Level 2: 附加映射 (Additive Mapping)
+* **行为**：捕获到遥控器按键后，触发用户配置的快捷键或文本注入，**但原始系统按键动作仍然会发生**。
+* **示例**：若将遥控器“音量加”键映射为常用语，按下时会在屏幕上输入文字，**同时系统的音量条也会增加**。
+
+### 3. Level 3: 替换原始动作 (Exclusive Replacement / Blocking) —— **Phase 1 验证目标**
+* **难点与矛盾**：
+  * 若要彻底“吞掉（Block）”原始按键，传统 Windows API 需要使用低级键盘钩子 `SetWindowsHookEx(WH_KEYBOARD_LL)`；
+  * 但是，[KBDLLHOOKSTRUCT 结构体](https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-kbdllhookstruct) **根本不包含设备句柄 `hDevice`**！
+  * 如果在全局钩子中直接拦截并返回 1，会导致用户电脑自带的物理键盘对应按键也被误拦截。
+* **决策**：**在 Phase 1 阶段，将“区分遥控器设备句柄并彻底屏蔽原始动作”列为 PoC 预研与验证目标**，在初期版本中默认仅承诺 Level 2 附加映射，待真机验证无副作用后再开放独占替换。
 
 ---
 
-## 二、快捷键模拟与输入法联动 (`SendInput`)
+## 二、端到端时序保证：首音防截断与尾音防剪切
 
-Windows 系统下模拟按键最底层、兼容性最好的 API 是 Win32 `SendInput`。它能保证注入的键位被当前前台活动窗口（微信、Word、浏览器、IDE）正确识别。
+输入法与语音遥控器的联动绝非“按下发快捷键、松开立刻发结束”这么简单。由于蓝牙传输延迟与音频缓冲，时序必须严格编排：
 
-### 1. 结构体定义 (C#)
+```text
+【语音启动流程 (Hold to Talk - Start)】
+1. 用户按下遥控器语音键 (或遥控器上报 0x08 START_SEARCH)
+2. 开启音频管线 Command Pre-roll（首音预存缓冲区，约 50~100ms）
+3. 调用 SendInput 向前台注入输入法开始录音快捷键
+4. 向遥控器下发 0x0C (MIC_OPEN) -> 接收 0x04 (AUDIO_START) 并提取 SessionID
+5. 将 Pre-roll 缓冲与后续流数据无缝送入 WASAPI 输出
+
+【语音结束流程 (Hold to Talk - Stop)】
+1. 用户松开语音键
+2. 【禁止立即停用输入法！】先向下发 0x0D (MIC_CLOSE, SessionID)
+3. 持续接收 BLE 传输中的残余音频包，直到收到 0x00 (AUDIO_STOP) 或尾包超时
+4. 最后一批 PCM 数据送入 WASAPI 缓冲区
+5. 等待虚拟音频队列排空 (Drain，约 40~60ms)
+6. 【此时才向系统注入输入法结束录音快捷键】
+```
+
+---
+
+## 三、`SendInput` 64 位结构对齐与 UIPI 权限边界
+
+在 64 位 Windows 操作系统下，Win32 `INPUT` 结构体的大小与内存布局受 C++ `union` 最大成员制约。
+
+### 1. 结构体大小对齐（x64 下严格为 40 字节）
+在 64 位平台下，`MOUSEINPUT` 由于包含 64 位指针 `ULONG_PTR dwExtraInfo`，尺寸为 28 字节，向上 8 字节对齐后占据 32 字节。加上 `DWORD type`（4 字节 + 4 字节填充），整个 `INPUT` 结构体在 x64 下严格为 **40 字节**（32 位下为 28 字节）。
+* 若 union 仅定义 16 字节的 `KEYBDINPUT`，会导致计算出的结构体尺寸错误，直接导致 `SendInput` 调用失败并报 `ERROR_INVALID_PARAMETER (87)`。
+
+### 2. 正确完整的 C# P/Invoke 声明
 ```csharp
+using System.Runtime.InteropServices;
+
 [StructLayout(LayoutKind.Sequential)]
 public struct INPUT
 {
@@ -63,7 +80,9 @@ public struct INPUT
 [StructLayout(LayoutKind.Explicit)]
 public struct InputUnion
 {
+    [FieldOffset(0)] public MOUSEINPUT mi;
     [FieldOffset(0)] public KEYBDINPUT ki;
+    [FieldOffset(0)] public HARDWAREINPUT hi;
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -73,75 +92,66 @@ public struct KEYBDINPUT
     public ushort wScan;
     public uint dwFlags;
     public uint time;
-    public IntPtr dwExtraInfo;
+    public UIntPtr dwExtraInfo;
 }
 
-public const uint INPUT_KEYBOARD = 1;
-public const uint KEYEVENTF_KEYUP = 0x0002;
-public const uint KEYEVENTF_UNICODE = 0x0004;
-```
-
-### 2. 主流输入法联动矩阵
-
-| 目标输入工具 | 推荐触发方式 | 快捷键配置 | 行为模式 |
-| :--- | :--- | :--- | :--- |
-| **微信输入法 (Windows)** | 自定义组合键 | 如 `Ctrl + Shift + Alt + V` | **按住说话**（按下发 KeyDown，松开发 KeyUp）或 **单击切换** |
-| **豆包输入法 (Windows)** | 独立快捷键 | 如 `F1` 或 自定义组合键 | 支持按住说话与单击开始/结束 |
-| **Windows 11 自带语音听写** | 系统原生内置 | `Win + H` | 系统自带，按下 `Win + H` 启动听写，再次按下或静音自动提交 |
-| **Typeless / VoiceCursor** | 专用快捷键 | 自定义 | 配合虚拟声卡与专属触发热键 |
-
-### 3. 组合键注入时序保证
-为防止操作系统因为按键顺序颠倒误判快捷键，组合键注入必须严格按照 **先按下修饰键 -> 再按下主键 -> 释放主键 -> 释放修饰键** 的顺序：
-```csharp
-public static void SendModifiedKey(ushort modifierVk, ushort keyVk)
+[StructLayout(LayoutKind.Sequential)]
+public struct MOUSEINPUT
 {
-    var inputs = new INPUT[]
-    {
-        // 1. 按下修饰键 (如 Ctrl)
-        CreateKeyInput(modifierVk, false),
-        // 2. 按下主键 (如 V)
-        CreateKeyInput(keyVk, false),
-        // 3. 释放主键
-        CreateKeyInput(keyVk, true),
-        // 4. 释放修饰键
-        CreateKeyInput(modifierVk, true)
-    };
-    SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(INPUT)));
+    public int dx;
+    public int dy;
+    public uint mouseData;
+    public uint dwFlags;
+    public uint time;
+    public UIntPtr dwExtraInfo;
 }
-```
 
----
-
-## 三、普通按键映射与常用语上屏
-
-遥控器的其他按键（如方向、确认、返回、主页、音量）可在设置中灵活映射：
-
-### 1. 动作类型支持
-1. **多媒体控制**：音量增加/减少、静音、播放/暂停、下一曲；
-2. **快捷键宏**：映射为任意单键或复杂组合键（如 `Ctrl + C`、`Enter`、`Alt + Tab`）；
-3. **常用语直接输入 (Text Snippet)**：一键输入预设文本（如常用邮箱、家庭地址、固定回复）。
-
-### 2. 常用语上屏技术实现 (Unicode 注入)
-常用语不需要模拟对应字符的物理键盘打字，直接使用 `KEYEVENTF_UNICODE` 注入 Unicode 字符流，中英文混写零乱码、直接上屏：
-```csharp
-public static void SendText(string text)
+[StructLayout(LayoutKind.Sequential)]
+public struct HARDWAREINPUT
 {
-    var inputs = new List<INPUT>();
-    foreach (char c in text)
+    public uint uMsg;
+    public ushort wParamL;
+    public ushort wParamH;
+}
+
+public static class NativeInputSender
+{
+    public const uint INPUT_KEYBOARD = 1;
+    public const uint KEYEVENTF_KEYUP = 0x0002;
+    public const uint KEYEVENTF_UNICODE = 0x0004;
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern uint SendInput(uint nInputs, [In] INPUT[] pInputs, int cbSize);
+
+    public static bool SendModifiedKey(ushort modifierVk, ushort keyVk)
     {
-        // 按下 Unicode 字符
-        inputs.Add(new INPUT
-        {
-            type = INPUT_KEYBOARD,
-            u = new InputUnion { ki = new KEYBDINPUT { wScan = c, dwFlags = KEYEVENTF_UNICODE } }
-        });
-        // 释放 Unicode 字符
-        inputs.Add(new INPUT
-        {
-            type = INPUT_KEYBOARD,
-            u = new InputUnion { ki = new KEYBDINPUT { wScan = c, dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP } }
-        });
+        var inputs = new INPUT[4];
+        inputs[0] = CreateKey(modifierVk, false);
+        inputs[1] = CreateKey(keyVk, false);
+        inputs[2] = CreateKey(keyVk, true);
+        inputs[3] = CreateKey(modifierVk, true);
+
+        uint sent = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
+        return sent == inputs.Length;
     }
-    SendInput((uint)inputs.Count, inputs.ToArray(), Marshal.SizeOf(typeof(INPUT)));
+
+    private static INPUT CreateKey(ushort vk, bool isKeyUp) => new INPUT
+    {
+        type = INPUT_KEYBOARD,
+        u = new InputUnion
+        {
+            ki = new KEYBDINPUT
+            {
+                wVk = vk,
+                dwFlags = isKeyUp ? KEYEVENTF_KEYUP : 0
+            }
+        }
+    };
 }
 ```
+
+### 3. UIPI (User Interface Privilege Isolation) 权限约束
+* **系统限制**：根据 Windows 安全架构，低完整性级别（普通权限）的进程向高完整性级别（以“管理员身份运行”）的窗口发送按键注入时，将被系统 UIPI 静默丢弃，`SendInput` 会返回 0 且失败；
+* **应用设计说明**：
+  * 本应用在普通权限下运行时，无法向以管理员身份运行的命令提示符、任务管理器或特权游戏注入快捷键；
+  * 向导中应明确告知用户此项系统限制，或在需要时支持以提升权限重启。

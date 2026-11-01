@@ -58,10 +58,17 @@ public static class NativeInputSender
     public const ushort VK_LSHIFT = 0xA0;
     public const ushort VK_LMENU = 0xA4; // Alt
     public const ushort VK_LWIN = 0x5B;
-    public const ushort VK_F1 = 0x70;
+    public const ushort VK_BACK = 0x08;
+    public const ushort VK_TAB = 0x09;
     public const ushort VK_RETURN = 0x0D;
     public const ushort VK_ESCAPE = 0x1B;
-    public const ushort VK_TAB = 0x09;
+    public const ushort VK_SPACE = 0x20;
+    public const ushort VK_LEFT = 0x25;
+    public const ushort VK_UP = 0x26;
+    public const ushort VK_RIGHT = 0x27;
+    public const ushort VK_DOWN = 0x28;
+    public const ushort VK_DELETE = 0x2E;
+    public const ushort VK_F1 = 0x70;
     public const ushort VK_VOLUME_MUTE = 0xAD;
     public const ushort VK_VOLUME_DOWN = 0xAE;
     public const ushort VK_VOLUME_UP = 0xAF;
@@ -118,10 +125,20 @@ public static class NativeInputSender
             else if (upper is "SHIFT") modifiers.Add(VK_LSHIFT);
             else if (upper is "ALT") modifiers.Add(VK_LMENU);
             else if (upper is "WIN" or "WINDOWS") modifiers.Add(VK_LWIN);
-            else if (upper == "ENTER") mainKey = VK_RETURN;
+            else if (upper is "ENTER" or "RETURN") mainKey = VK_RETURN;
             else if (upper is "ESC" or "ESCAPE") mainKey = VK_ESCAPE;
             else if (upper == "TAB") mainKey = VK_TAB;
-            else if (upper == "F1") mainKey = VK_F1;
+            else if (upper == "SPACE") mainKey = VK_SPACE;
+            else if (upper is "BACK" or "BACKSPACE") mainKey = VK_BACK;
+            else if (upper is "DEL" or "DELETE") mainKey = VK_DELETE;
+            else if (upper == "UP") mainKey = VK_UP;
+            else if (upper == "DOWN") mainKey = VK_DOWN;
+            else if (upper == "LEFT") mainKey = VK_LEFT;
+            else if (upper == "RIGHT") mainKey = VK_RIGHT;
+            else if (upper.StartsWith("F") && int.TryParse(upper[1..], out int fNum) && fNum >= 1 && fNum <= 12)
+            {
+                mainKey = (ushort)(VK_F1 + (fNum - 1));
+            }
             else if (upper.Length == 1 && upper[0] >= 'A' && upper[0] <= 'Z') mainKey = upper[0];
             else if (upper.Length == 1 && upper[0] >= '0' && upper[0] <= '9') mainKey = upper[0];
         }

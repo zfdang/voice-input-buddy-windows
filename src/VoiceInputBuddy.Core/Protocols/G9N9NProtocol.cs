@@ -19,12 +19,35 @@ public static class G9N9NProtocol
         [0x00E9] = RemoteButton.VolumeUp,
         [0x00EA] = RemoteButton.VolumeDown,
         [0x00E2] = RemoteButton.Mute,
+        [0x00CD] = RemoteButton.PlayPause,
         [0x0077] = RemoteButton.YouTube,
         [0x0078] = RemoteButton.Netflix,
         [0x0189] = RemoteButton.Input,
         [0x0089] = RemoteButton.Input,
-        [0x019E] = RemoteButton.Power
+        [0x019E] = RemoteButton.Power,
+        [0x0221] = RemoteButton.Menu
     };
+
+    public static readonly ushort[] IndexedConsumerUsages =
+    [
+        0x019E, // 1: Power
+        0x00CD, // 2: Play/Pause
+        0x0042, // 3: Up
+        0x0043, // 4: Down
+        0x0044, // 5: Left
+        0x0045, // 6: Right
+        0x0041, // 7: Ok
+        0x00E2, // 8: Mute
+        0x0221, // 9: App
+        0x0223, // 10: Home
+        0x0224, // 11: Back
+        0x00E9, // 12: VolUp
+        0x00EA, // 13: VolDown
+        0x0077, // 14: YouTube
+        0x0078, // 15: Netflix
+        0x0079, // 16: Custom
+        0x0089  // 17: Input
+    ];
 
     public static bool IsCandidate(string? name)
     {
@@ -33,20 +56,50 @@ public static class G9N9NProtocol
         return clean.Contains("chromecast") || clean.Contains("g9n9n");
     }
 
+    public static bool TryParseReport1(ReadOnlySpan<byte> data, out List<RemoteButton> buttons)
+    {
+        buttons = new();
+        if (data.IsEmpty) return false;
+
+        ReadOnlySpan<byte> slice = data;
+        if (slice.Length >= 3 && slice[0] == 1)
+        {
+            slice = slice[1..];
+        }
+
+        if (slice.Length < 2) return false;
+
+        for (int i = 0; i < 2; i++)
+        {
+            byte index = slice[i];
+            if (index > 0 && index <= IndexedConsumerUsages.Length)
+            {
+                ushort usage = IndexedConsumerUsages[index - 1];
+                if (ConsumerButtons.TryGetValue(usage, out var btn))
+                {
+                    buttons.Add(btn);
+                }
+            }
+        }
+
+        return true;
+    }
+
     public static bool TryParseReport2(ReadOnlySpan<byte> data, out List<RemoteButton> buttons)
     {
         buttons = new();
         if (data.IsEmpty) return false;
 
         ReadOnlySpan<byte> slice = data;
-        if (slice.Length % 2 == 1 && slice[0] == 2)
+        if (slice.Length >= 3 && slice[0] == 2)
         {
             slice = slice[1..];
         }
 
-        if (slice.IsEmpty || slice.Length % 2 != 0) return false;
+        if (slice.Length < 2) return false;
 
-        for (int i = 0; i < slice.Length; i += 2)
+        int usableLength = slice.Length - (slice.Length % 2);
+        for (int i = 0; i < usableLength; i += 2)
         {
             ushort usage = (ushort)(slice[i] | (slice[i + 1] << 8));
             if (usage != 0 && ConsumerButtons.TryGetValue(usage, out var btn))
@@ -55,7 +108,32 @@ public static class G9N9NProtocol
             }
         }
 
-        return buttons.Count > 0;
+        return true;
+    }
+
+    public static bool TryParseReport(ReadOnlySpan<byte> data, out List<RemoteButton> buttons)
+    {
+        if (data.Length >= 3 && data[0] == 1)
+        {
+            return TryParseReport1(data, out buttons);
+        }
+        if (data.Length >= 3 && data[0] == 2)
+        {
+            return TryParseReport2(data, out buttons);
+        }
+
+        // Fallback checks when driver omits the Report ID byte
+        if (data.Length == 2)
+        {
+            if (TryParseReport1(data, out buttons) && buttons.Count > 0) return true;
+        }
+        if (data.Length >= 2 && data.Length % 2 == 0)
+        {
+            if (TryParseReport2(data, out buttons) && buttons.Count > 0) return true;
+        }
+
+        buttons = new();
+        return false;
     }
 }
 

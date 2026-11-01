@@ -12,6 +12,7 @@ public partial class MainViewModel : ObservableObject
     private readonly ConfigService _configService;
     private readonly WinRtBluetoothManager _bluetoothManager;
     private readonly RawInputReceiver _rawInputReceiver = new();
+    private string? _activeHeldShortcut;
 
     [ObservableProperty]
     private string _currentTitle = "Voice Input Buddy (Windows)";
@@ -37,6 +38,8 @@ public partial class MainViewModel : ObservableObject
     public EnvironmentViewModel EnvironmentVm { get; }
     public SettingsViewModel SettingsVm { get; }
 
+    public OnboardingViewModel? ActiveOnboardingVm { get; set; }
+
     public event Action? RequestOpenOnboarding;
 
     public MainViewModel(ConfigService configService, WinRtBluetoothManager bluetoothManager)
@@ -49,6 +52,8 @@ public partial class MainViewModel : ObservableObject
         IntegrationsVm = new IntegrationsViewModel(_configService);
         EnvironmentVm = new EnvironmentViewModel();
         SettingsVm = new SettingsViewModel(_configService, () => RequestOpenOnboarding?.Invoke());
+
+        _rawInputReceiver.DeviceFilter = IsTargetDevice;
 
         _bluetoothManager.ConnectionStatusChanged += (connected, name) =>
         {
@@ -67,10 +72,12 @@ public partial class MainViewModel : ObservableObject
             string shortcut = _configService.Current.InputTool.Shortcut;
             if (_configService.Current.InputTool.TriggerMode == VoiceTriggerMode.HoldToTalk)
             {
+                _activeHeldShortcut = shortcut;
                 NativeInputSender.SendShortcutDown(shortcut);
             }
             else
             {
+                _activeHeldShortcut = null;
                 NativeInputSender.SendShortcutClick(shortcut);
             }
         };
@@ -79,13 +86,14 @@ public partial class MainViewModel : ObservableObject
         {
             IsVoiceActive = false;
             CurrentAudioLevel = 0f;
-            string shortcut = _configService.Current.InputTool.Shortcut;
-            if (_configService.Current.InputTool.TriggerMode == VoiceTriggerMode.HoldToTalk)
+            if (!string.IsNullOrEmpty(_activeHeldShortcut))
             {
-                NativeInputSender.SendShortcutUp(shortcut);
+                NativeInputSender.SendShortcutUp(_activeHeldShortcut);
+                _activeHeldShortcut = null;
             }
-            else
+            else if (_configService.Current.InputTool.TriggerMode == VoiceTriggerMode.ClickToToggle)
             {
+                string shortcut = _configService.Current.InputTool.Shortcut;
                 NativeInputSender.SendShortcutClick(shortcut);
             }
         };
@@ -93,11 +101,74 @@ public partial class MainViewModel : ObservableObject
         _rawInputReceiver.ButtonEvent += OnRawButtonEvent;
     }
 
+    partial void OnActivePageNameChanged(string value)
+    {
+        if (value == "Mapping")
+        {
+            MappingVm.LoadMappings();
+        }
+    }
+
     public void RegisterRawInput(IntPtr hwnd) => _rawInputReceiver.Register(hwnd);
     public void ProcessRawInput(IntPtr lParam) => _rawInputReceiver.ProcessMessage(lParam);
 
+    private bool IsTargetDevice(IntPtr hDevice, string devicePath)
+    {
+        if (string.IsNullOrEmpty(devicePath))
+        {
+            return string.IsNullOrEmpty(_configService.Current.SelectedDeviceId);
+        }
+
+        string lowerPath = devicePath.ToLowerInvariant();
+
+        // Check if device matches the one being tested in onboarding
+        var onboardingDev = ActiveOnboardingVm?.SelectedDevice;
+        if (onboardingDev != null && onboardingDev.BluetoothAddress != 0)
+        {
+            if (MatchesBluetoothAddress(lowerPath, onboardingDev.BluetoothAddress)) return true;
+        }
+
+        // Check if device matches the configured selected device
+        var selectedDev = _configService.Current.Devices.FirstOrDefault(d => d.Id == _configService.Current.SelectedDeviceId);
+        if (selectedDev != null && selectedDev.BluetoothAddress != 0)
+        {
+            if (MatchesBluetoothAddress(lowerPath, selectedDev.BluetoothAddress)) return true;
+        }
+
+        // If no device configured yet or during wizard, allow BLE HID or candidate remote devices
+        if (selectedDev == null || selectedDev.BluetoothAddress == 0)
+        {
+            bool isBleHid = lowerPath.Contains("00001812") || lowerPath.Contains("bth") || lowerPath.Contains("bluetooth");
+            bool isRemoteCandidate = lowerPath.Contains("g9n9n") || lowerPath.Contains("rc001") || lowerPath.Contains("rc003") || lowerPath.Contains("xiaomi");
+            return isBleHid || isRemoteCandidate;
+        }
+
+        return false;
+    }
+
+    private static bool MatchesBluetoothAddress(string lowerPath, ulong address)
+    {
+        string hex12 = address.ToString("x12");
+        string hexTrim = address.ToString("x");
+        if (lowerPath.Contains(hex12) || lowerPath.Contains(hexTrim)) return true;
+
+        byte[] bytes = BitConverter.GetBytes(address);
+        string formattedUnderscore = $"{bytes[5]:x2}_{bytes[4]:x2}_{bytes[3]:x2}_{bytes[2]:x2}_{bytes[1]:x2}_{bytes[0]:x2}";
+        string formattedColon = $"{bytes[5]:x2}:{bytes[4]:x2}:{bytes[3]:x2}:{bytes[2]:x2}:{bytes[1]:x2}:{bytes[0]:x2}";
+        return lowerPath.Contains(formattedUnderscore) || lowerPath.Contains(formattedColon);
+    }
+
     private void OnRawButtonEvent(RemoteButton button, bool isDown)
     {
+        if (ActiveOnboardingVm != null)
+        {
+            if (isDown)
+            {
+                ActiveOnboardingVm.NotifyButtonPressed(button);
+            }
+            return;
+        }
+
         if (button == RemoteButton.Voice)
         {
             if (isDown)

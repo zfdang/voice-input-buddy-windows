@@ -18,7 +18,9 @@ public enum RemoteButton
     Voice,
     YouTube,
     Netflix,
-    Input
+    Input,
+    PlayPause,
+    LiveTv
 }
 
 public enum ButtonActionType

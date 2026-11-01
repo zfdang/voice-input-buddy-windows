@@ -24,6 +24,9 @@ public partial class App : Application
         var mainWindow = new MainWindow { DataContext = _mainViewModel };
         MainWindow = mainWindow;
 
+        // Ensure HWND is initialized so RawInputReceiver is active for onboarding
+        new System.Windows.Interop.WindowInteropHelper(mainWindow).EnsureHandle();
+
         _mainViewModel.RequestOpenOnboarding += ShowOnboardingWindow;
 
         if (!_configService.Current.HasCompletedOnboarding)
@@ -37,12 +40,21 @@ public partial class App : Application
 
     private void ShowOnboardingWindow()
     {
-        if (_configService == null || _bluetoothManager == null) return;
+        if (_configService == null || _bluetoothManager == null || _mainViewModel == null) return;
 
         var onboardingVm = new OnboardingViewModel(_configService, _bluetoothManager);
-        var onboardingWin = new OnboardingWindow { DataContext = onboardingVm };
+        _mainViewModel.ActiveOnboardingVm = onboardingVm;
+
+        var onboardingWin = new OnboardingWindow { DataContext = onboardingVm, Owner = MainWindow };
         onboardingVm.RequestClose += () => onboardingWin.Close();
-        onboardingWin.ShowDialog();
+        try
+        {
+            onboardingWin.ShowDialog();
+        }
+        finally
+        {
+            _mainViewModel.ActiveOnboardingVm = null;
+        }
     }
 
     protected override void OnExit(ExitEventArgs e)

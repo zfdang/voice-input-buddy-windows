@@ -71,10 +71,27 @@ public partial class DevicesViewModel : ObservableObject
         if (ok)
         {
             device.IsConnected = true;
+            if (device.Mappings == null || device.Mappings.Count == 0)
+            {
+                device.Mappings = RemoteDevice.CreateDefaultMappings(device.ModelType);
+            }
             _config.Current.SelectedDeviceId = device.Id;
             if (!_config.Current.Devices.Any(d => d.Id == device.Id))
             {
                 _config.Current.Devices.Add(device);
+            }
+            _config.Save();
+        }
+    }
+
+    partial void OnSelectedDeviceChanged(RemoteDevice? value)
+    {
+        if (value != null)
+        {
+            _config.Current.SelectedDeviceId = value.Id;
+            if (value.Mappings == null || value.Mappings.Count == 0)
+            {
+                value.Mappings = RemoteDevice.CreateDefaultMappings(value.ModelType);
             }
             _config.Save();
         }
@@ -94,14 +111,29 @@ public partial class MappingViewModel : ObservableObject
         LoadMappings();
     }
 
-    private void LoadMappings()
+    public void LoadMappings()
     {
         CurrentMappings.Clear();
         var selectedDev = _config.Current.Devices.FirstOrDefault(d => d.Id == _config.Current.SelectedDeviceId);
-        var mappings = selectedDev?.Mappings ?? RemoteDevice.CreateDefaultMappings(RemoteModelType.XiaomiRC001);
-        foreach (var m in mappings)
+        if (selectedDev != null)
         {
-            CurrentMappings.Add(m);
+            if (selectedDev.Mappings == null || selectedDev.Mappings.Count == 0)
+            {
+                selectedDev.Mappings = RemoteDevice.CreateDefaultMappings(selectedDev.ModelType);
+                _config.Save();
+            }
+            foreach (var m in selectedDev.Mappings)
+            {
+                CurrentMappings.Add(m);
+            }
+        }
+        else
+        {
+            var defaults = RemoteDevice.CreateDefaultMappings(RemoteModelType.XiaomiRC001);
+            foreach (var m in defaults)
+            {
+                CurrentMappings.Add(m);
+            }
         }
     }
 

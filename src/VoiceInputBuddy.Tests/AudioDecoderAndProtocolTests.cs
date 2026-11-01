@@ -132,4 +132,81 @@ public class AudioDecoderAndProtocolTests
         Assert.Empty(modifiers);
         Assert.Equal(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_F1, mainKey);
     }
+
+    [Fact]
+    public void NativeInputSender_TryParseShortcut_ArrowAndSpecialKeys()
+    {
+        Assert.True(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.TryParseShortcut("Up", out _, out ushort upKey));
+        Assert.Equal(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_UP, upKey);
+
+        Assert.True(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.TryParseShortcut("Down", out _, out ushort downKey));
+        Assert.Equal(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_DOWN, downKey);
+
+        Assert.True(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.TryParseShortcut("Left", out _, out ushort leftKey));
+        Assert.Equal(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_LEFT, leftKey);
+
+        Assert.True(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.TryParseShortcut("Right", out _, out ushort rightKey));
+        Assert.Equal(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_RIGHT, rightKey);
+
+        Assert.True(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.TryParseShortcut("Space", out _, out ushort spaceKey));
+        Assert.Equal(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_SPACE, spaceKey);
+
+        Assert.True(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.TryParseShortcut("Back", out _, out ushort backKey));
+        Assert.Equal(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_BACK, backKey);
+
+        Assert.True(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.TryParseShortcut("Delete", out _, out ushort delKey));
+        Assert.Equal(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_DELETE, delKey);
+
+        Assert.True(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.TryParseShortcut("Ctrl+Down", out var ctrlDownMods, out ushort ctrlDownKey));
+        Assert.Single(ctrlDownMods);
+        Assert.Equal(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_DOWN, ctrlDownKey);
+    }
+
+    [Fact]
+    public void G9N9NProtocol_TryParseReport1_ParsesIndexedButtonsAndRelease()
+    {
+        // Index 3 is Up
+        byte[] report1Up = [0x01, 0x03, 0x00];
+        Assert.True(G9N9NProtocol.TryParseReport(report1Up, out var buttons));
+        Assert.Single(buttons);
+        Assert.Equal(VoiceInputBuddy.Core.Models.RemoteButton.Up, buttons[0]);
+
+        // Index 4 is Down, Index 5 is Left
+        byte[] report1Multi = [0x01, 0x04, 0x05];
+        Assert.True(G9N9NProtocol.TryParseReport(report1Multi, out var multiButtons));
+        Assert.Equal(2, multiButtons.Count);
+        Assert.Contains(VoiceInputBuddy.Core.Models.RemoteButton.Down, multiButtons);
+        Assert.Contains(VoiceInputBuddy.Core.Models.RemoteButton.Left, multiButtons);
+
+        // All 0 is a valid release report
+        byte[] report1Release = [0x01, 0x00, 0x00];
+        Assert.True(G9N9NProtocol.TryParseReport(report1Release, out var releaseButtons));
+        Assert.Empty(releaseButtons);
+    }
+
+    [Fact]
+    public void G9N9NProtocol_TryParseReport2_ParsesUsagesAndRelease()
+    {
+        // Usage 0x0042 is Up
+        byte[] report2Up = [0x02, 0x42, 0x00, 0x00];
+        Assert.True(G9N9NProtocol.TryParseReport(report2Up, out var buttons));
+        Assert.Single(buttons);
+        Assert.Equal(VoiceInputBuddy.Core.Models.RemoteButton.Up, buttons[0]);
+
+        // All 0 is a valid release report
+        byte[] report2Release = [0x02, 0x00, 0x00, 0x00];
+        Assert.True(G9N9NProtocol.TryParseReport(report2Release, out var releaseButtons));
+        Assert.Empty(releaseButtons);
+    }
+
+    [Fact]
+    public void RemoteDevice_DefaultMappings_Populated()
+    {
+        var device = new VoiceInputBuddy.Core.Models.RemoteDevice();
+        Assert.NotNull(device.Mappings);
+        Assert.NotEmpty(device.Mappings);
+        Assert.Contains(device.Mappings, m => m.Button == VoiceInputBuddy.Core.Models.RemoteButton.Up);
+        Assert.Contains(device.Mappings, m => m.Button == VoiceInputBuddy.Core.Models.RemoteButton.Ok);
+        Assert.Contains(device.Mappings, m => m.Button == VoiceInputBuddy.Core.Models.RemoteButton.VolumeUp);
+    }
 }

@@ -18,7 +18,7 @@ public class RemoteDevice
     public bool IsConnected { get; set; }
     public int BatteryLevel { get; set; } = -1;
     public float Gain { get; set; } = 1.0f;
-    public List<ButtonMapping> Mappings { get; set; } = new();
+    public List<ButtonMapping> Mappings { get; set; } = CreateDefaultMappings(RemoteModelType.Unknown);
 
     public static List<ButtonMapping> CreateDefaultMappings(RemoteModelType type)
     {
@@ -45,6 +45,7 @@ public class RemoteDevice
         Add(RemoteButton.VolumeUp, ButtonActionType.MediaControl, media: MediaCommand.VolumeUp);
         Add(RemoteButton.VolumeDown, ButtonActionType.MediaControl, media: MediaCommand.VolumeDown);
         Add(RemoteButton.Mute, ButtonActionType.MediaControl, media: MediaCommand.Mute);
+        Add(RemoteButton.PlayPause, ButtonActionType.MediaControl, media: MediaCommand.PlayPause);
 
         return list;
     }

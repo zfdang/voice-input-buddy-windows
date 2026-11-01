@@ -1,0 +1,36 @@
+<UserControl x:Class="VoiceInputBuddy.App.Views.Pages.SettingsPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" 
+             d:DesignHeight="550" d:DesignWidth="700">
+    <Grid>
+        <StackPanel Margin="0,0,0,20">
+            <TextBlock Text="通用设置" FontSize="22" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}" Margin="0,0,0,16"/>
+
+            <!-- Rerun Wizard Button -->
+            <Border Background="{StaticResource CardBackgroundBrush}" Padding="16" CornerRadius="6" Margin="0,0,0,20">
+                <DockPanel LastChildFill="False">
+                    <StackPanel DockPanel.Dock="Left">
+                        <TextBlock Text="首次设置向导" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}"/>
+                        <TextBlock Text="重新运行全流程环境检查、设备配对与实际转写验收向导。" FontSize="12" Foreground="{StaticResource SecondaryTextBrush}" Margin="0,4,0,0"/>
+                    </StackPanel>
+                    <Button Content="🚀 重新运行向导" DockPanel.Dock="Right" Padding="14,8" Background="#007ACC" Command="{Binding RerunWizardCommand}"/>
+                </DockPanel>
+            </Border>
+
+            <!-- Preferences -->
+            <Border Background="{StaticResource CardBackgroundBrush}" Padding="16" CornerRadius="6" Margin="0,0,0,20">
+                <StackPanel>
+                    <CheckBox Content="开机时自动在后台启动" IsChecked="{Binding LaunchAtStartup}" Foreground="#FFF" Margin="0,0,0,16"/>
+                    <CheckBox Content="关闭主窗口时最小化至系统托盘" IsChecked="True" Foreground="#FFF" Margin="0,0,0,16"/>
+
+                    <TextBlock Text="关于 Voice Input Buddy (Windows)：" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}" Margin="0,0,0,6"/>
+                    <TextBlock Text="{Binding AppVersion, StringFormat='版本号: {0}'}" Foreground="{StaticResource SecondaryTextBrush}" Margin="0,0,0,4"/>
+                    <TextBlock Text="遵循 GPL-3.0-only 开源协议发布。" Foreground="{StaticResource SecondaryTextBrush}"/>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </Grid>
+</UserControl>

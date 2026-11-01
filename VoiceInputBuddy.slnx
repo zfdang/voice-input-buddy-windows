@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/VoiceInputBuddy.App/VoiceInputBuddy.App.csproj" />
+    <Project Path="src/VoiceInputBuddy.Core/VoiceInputBuddy.Core.csproj" />
+    <Project Path="src/VoiceInputBuddy.Platform.Windows/VoiceInputBuddy.Platform.Windows.csproj" />
+    <Project Path="src/VoiceInputBuddy.Tests/VoiceInputBuddy.Tests.csproj" />
+  </Folder>
+</Solution>

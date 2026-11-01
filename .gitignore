@@ -1,0 +1,24 @@
+## .NET and Visual Studio
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+dist/
+publish/
+
+# Visual Studio files
+.vs/
+*.user
+*.userosscache
+*.suo
+*.userprefs
+*.dbmdl
+*.jfm
+
+# Rider / JetBrains
+.idea/
+*.sln.iml
+
+# OS generated
+.DS_Store
+Thumbs.db

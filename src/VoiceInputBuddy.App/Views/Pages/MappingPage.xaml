@@ -1,0 +1,45 @@
+<UserControl x:Class="VoiceInputBuddy.App.Views.Pages.MappingPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" 
+             d:DesignHeight="550" d:DesignWidth="700">
+    <Grid>
+        <DockPanel LastChildFill="True">
+            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,16">
+                <TextBlock Text="按键映射" FontSize="22" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}"/>
+                <Button Content="💾 保存配置" HorizontalAlignment="Right" Padding="14,6" Background="#007ACC" Command="{Binding SaveMappingsCommand}"/>
+            </DockPanel>
+
+            <TextBlock DockPanel.Dock="Top" Text="配置遥控器普通硬件按键的单击、双击与长按动作：" Foreground="{StaticResource SecondaryTextBrush}" Margin="0,0,0,16"/>
+
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <ItemsControl ItemsSource="{Binding CurrentMappings}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Background="{StaticResource CardBackgroundBrush}" Margin="0,0,0,8" Padding="14" CornerRadius="6">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="140"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="{Binding Button}" FontWeight="SemiBold" VerticalAlignment="Center" Foreground="{StaticResource PrimaryTextBrush}"/>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Text="单击: " Foreground="{StaticResource SecondaryTextBrush}"/>
+                                        <TextBlock Text="{Binding ClickShortcut, FallbackValue='(无)'}" Foreground="{StaticResource PrimaryTextBrush}"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Text="长按: " Foreground="{StaticResource SecondaryTextBrush}"/>
+                                        <TextBlock Text="{Binding LongPressAction}" Foreground="{StaticResource PrimaryTextBrush}"/>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </DockPanel>
+    </Grid>
+</UserControl>

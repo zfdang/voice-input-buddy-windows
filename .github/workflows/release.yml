@@ -1,0 +1,103 @@
+name: Windows build and release
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    outputs:
+      tag: ${{ steps.version.outputs.RELEASE_TAG }}
+      package_version: ${{ steps.version.outputs.RELEASE_PACKAGE_VERSION }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Compute deterministic release version
+        id: version
+        shell: bash
+        run: |
+          scripts/release-metadata.sh | tee "$RUNNER_TEMP/release-version"
+          cat "$RUNNER_TEMP/release-version" >> "$GITHUB_ENV"
+          cat "$RUNNER_TEMP/release-version" >> "$GITHUB_OUTPUT"
+
+      - name: Restore solution
+        run: dotnet restore VoiceInputBuddy.sln
+
+      - name: Build solution
+        run: dotnet build VoiceInputBuddy.sln -c Release -p:Version="${{ env.RELEASE_PACKAGE_VERSION }}"
+
+      - name: Run unit tests
+        run: dotnet test VoiceInputBuddy.sln -c Release --no-build --verbosity normal
+
+      - name: Publish self-contained executable
+        run: |
+          dotnet publish src/VoiceInputBuddy.App/VoiceInputBuddy.App.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:Version="${{ env.RELEASE_PACKAGE_VERSION }}" `
+            -o dist/publish/win-x64
+
+      - name: Archive publication artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist/release
+          Compress-Archive -Path dist/publish/win-x64/* -DestinationPath "dist/release/Voice_Input_Buddy_${{ env.RELEASE_TAG }}_Windows_x64.zip"
+
+      - name: Upload Windows build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-release-x64
+          path: dist/release/*
+          if-no-files-found: error
+
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ needs.build.outputs.tag }}
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Windows-release-x64
+          path: release
+
+      - name: Publish or update GitHub Release
+        shell: bash
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists. Uploading assets..."
+            gh release upload "$RELEASE_TAG" release/* --clobber
+          else
+            echo "Creating new release $RELEASE_TAG..."
+            gh release create "$RELEASE_TAG" release/* \
+              --title "Voice Input Buddy (Windows) $RELEASE_TAG" \
+              --notes "Voice Input Buddy for Windows automated release $RELEASE_TAG."
+          fi

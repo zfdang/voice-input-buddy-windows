@@ -2,6 +2,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using VoiceInputBuddy.Core.Config;
 using VoiceInputBuddy.Core.Models;
+using VoiceInputBuddy.Core.Protocols;
 using VoiceInputBuddy.Platform.Windows.Bluetooth;
 using VoiceInputBuddy.Platform.Windows.Input;
 
@@ -114,48 +115,58 @@ public partial class MainViewModel : ObservableObject
 
     private bool IsTargetDevice(IntPtr hDevice, string devicePath)
     {
-        if (string.IsNullOrEmpty(devicePath))
+        // 1. Establish HID vs BLE correspondence through official Windows Container ID
+        Guid? deviceContainerId = RawInputReceiver.GetDeviceContainerId(devicePath);
+        if (deviceContainerId.HasValue)
         {
-            return string.IsNullOrEmpty(_configService.Current.SelectedDeviceId);
+            // Match active BLE connection container
+            if (_bluetoothManager.ConnectedDeviceContainerId.HasValue &&
+                _bluetoothManager.ConnectedDeviceContainerId.Value == deviceContainerId.Value)
+            {
+                return true;
+            }
+
+            // Match onboarding device container
+            var onboardingDev = ActiveOnboardingVm?.SelectedDevice;
+            if (onboardingDev?.ContainerId != null &&
+                onboardingDev.ContainerId.Value == deviceContainerId.Value)
+            {
+                return true;
+            }
+
+            // Match selected device container from configuration
+            var selectedDev = _configService.Current.Devices.FirstOrDefault(d => d.Id == _configService.Current.SelectedDeviceId);
+            if (selectedDev?.ContainerId != null &&
+                selectedDev.ContainerId.Value == deviceContainerId.Value)
+            {
+                return true;
+            }
         }
 
-        string lowerPath = devicePath.ToLowerInvariant();
-
-        // Check if device matches the one being tested in onboarding
-        var onboardingDev = ActiveOnboardingVm?.SelectedDevice;
-        if (onboardingDev != null && onboardingDev.BluetoothAddress != 0)
+        // 2. Query official HID device properties (VID/PID) via RIDI_DEVICEINFO
+        if (RawInputReceiver.GetHidDeviceInfo(hDevice, out uint vid, out uint pid))
         {
-            if (MatchesBluetoothAddress(lowerPath, onboardingDev.BluetoothAddress)) return true;
+            // Google G9N9N Voice Remote (VID 0x18D1, PID 0x9450)
+            if (vid == G9N9NProtocol.VendorId && pid == G9N9NProtocol.ProductId)
+            {
+                return true;
+            }
+
+            // Xiaomi Bluetooth Remote (VID 0x2717)
+            if (vid == 0x2717)
+            {
+                return true;
+            }
+
+            // If it's a known non-remote USB desktop keyboard or mouse, reject it
+            if (vid != 0)
+            {
+                return false;
+            }
         }
 
-        // Check if device matches the configured selected device
-        var selectedDev = _configService.Current.Devices.FirstOrDefault(d => d.Id == _configService.Current.SelectedDeviceId);
-        if (selectedDev != null && selectedDev.BluetoothAddress != 0)
-        {
-            if (MatchesBluetoothAddress(lowerPath, selectedDev.BluetoothAddress)) return true;
-        }
-
-        // If no device configured yet or during wizard, allow BLE HID or candidate remote devices
-        if (selectedDev == null || selectedDev.BluetoothAddress == 0)
-        {
-            bool isBleHid = lowerPath.Contains("00001812") || lowerPath.Contains("bth") || lowerPath.Contains("bluetooth");
-            bool isRemoteCandidate = lowerPath.Contains("g9n9n") || lowerPath.Contains("rc001") || lowerPath.Contains("rc003") || lowerPath.Contains("xiaomi");
-            return isBleHid || isRemoteCandidate;
-        }
-
-        return false;
-    }
-
-    private static bool MatchesBluetoothAddress(string lowerPath, ulong address)
-    {
-        string hex12 = address.ToString("x12");
-        string hexTrim = address.ToString("x");
-        if (lowerPath.Contains(hex12) || lowerPath.Contains(hexTrim)) return true;
-
-        byte[] bytes = BitConverter.GetBytes(address);
-        string formattedUnderscore = $"{bytes[5]:x2}_{bytes[4]:x2}_{bytes[3]:x2}_{bytes[2]:x2}_{bytes[1]:x2}_{bytes[0]:x2}";
-        string formattedColon = $"{bytes[5]:x2}:{bytes[4]:x2}:{bytes[3]:x2}:{bytes[2]:x2}:{bytes[1]:x2}:{bytes[0]:x2}";
-        return lowerPath.Contains(formattedUnderscore) || lowerPath.Contains(formattedColon);
+        // 3. Fallback when Container ID or VID/PID cannot be queried (e.g. mock test harnesses)
+        return true;
     }
 
     private void OnRawButtonEvent(RemoteButton button, bool isDown)

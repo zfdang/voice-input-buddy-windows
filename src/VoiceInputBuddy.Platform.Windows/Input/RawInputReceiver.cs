@@ -11,6 +11,14 @@ public sealed class RawInputReceiver : IDisposable
     private const int RIDEV_INPUTSINK = 0x00000100;
     private const int RIDEV_REMOVE = 0x00000001;
     private const uint RIDI_DEVICENAME = 0x20000007;
+    private const uint RIDI_DEVICEINFO = 0x2000000b;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct DEVPROPKEY
+    {
+        public Guid fmtid;
+        public uint pid;
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct RAWINPUTDEVICE
@@ -58,6 +66,15 @@ public sealed class RawInputReceiver : IDisposable
         IntPtr pData,
         ref uint pcbSize);
 
+    [DllImport("cfgmgr32.dll", EntryPoint = "CM_Get_Device_Interface_PropertyW", SetLastError = true)]
+    private static extern uint CM_Get_Device_Interface_Property(
+        [MarshalAs(UnmanagedType.LPWStr)] string pszDeviceInterface,
+        ref DEVPROPKEY PropertyKey,
+        out uint PropertyType,
+        [Out] byte[] PropertyBuffer,
+        ref uint PropertyBufferSize,
+        uint ulFlags);
+
     public event Action<RemoteButton, bool>? ButtonEvent;
 
     public Func<IntPtr, string, bool>? DeviceFilter { get; set; }
@@ -67,6 +84,76 @@ public sealed class RawInputReceiver : IDisposable
     private readonly Dictionary<IntPtr, string> _devicePathCache = new();
     private readonly Dictionary<IntPtr, HashSet<RemoteButton>> _devicePressedButtons = new();
     private readonly object _lock = new();
+
+    public static Guid? GetDeviceContainerId(string devicePath)
+    {
+        if (string.IsNullOrEmpty(devicePath)) return null;
+
+        try
+        {
+            var key = new DEVPROPKEY
+            {
+                fmtid = new Guid("8c7fd206-1020-40d4-9e16-81256e08b877"),
+                pid = 2 // DEVPKEY_Device_ContainerId
+            };
+
+            uint bufferSize = 16;
+            byte[] buffer = new byte[16];
+            uint propType = 0;
+            uint cr = CM_Get_Device_Interface_Property(devicePath, ref key, out propType, buffer, ref bufferSize, 0);
+            if (cr == 0 && bufferSize == 16)
+            {
+                return new Guid(buffer);
+            }
+        }
+        catch
+        {
+            // Graceful fallback for non-Windows test environments
+        }
+
+        return null;
+    }
+
+    public static bool GetHidDeviceInfo(IntPtr hDevice, out uint vendorId, out uint productId)
+    {
+        vendorId = 0;
+        productId = 0;
+        if (hDevice == IntPtr.Zero) return false;
+
+        try
+        {
+            uint size = 0;
+            GetRawInputDeviceInfo(hDevice, RIDI_DEVICEINFO, IntPtr.Zero, ref size);
+            if (size == 0) return false;
+
+            IntPtr pData = Marshal.AllocHGlobal((int)size);
+            try
+            {
+                Marshal.WriteInt32(pData, (int)size); // cbSize
+                if (GetRawInputDeviceInfo(hDevice, RIDI_DEVICEINFO, pData, ref size) == size)
+                {
+                    uint dwType = (uint)Marshal.ReadInt32(pData, 4);
+                    if (dwType == 2) // RIM_TYPEHID
+                    {
+                        // In RID_DEVICE_INFO, the union starts at offset 8
+                        vendorId = (uint)Marshal.ReadInt32(pData, 8);
+                        productId = (uint)Marshal.ReadInt32(pData, 12);
+                        return true;
+                    }
+                }
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(pData);
+            }
+        }
+        catch
+        {
+            // Graceful fallback
+        }
+
+        return false;
+    }
 
     public static string? GetDevicePath(IntPtr hDevice)
     {

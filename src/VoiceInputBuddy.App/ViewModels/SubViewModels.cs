@@ -71,6 +71,7 @@ public partial class DevicesViewModel : ObservableObject
         if (ok)
         {
             device.IsConnected = true;
+            device.ContainerId = _bt.ConnectedDeviceContainerId;
             if (device.Mappings == null || device.Mappings.Count == 0)
             {
                 device.Mappings = RemoteDevice.CreateDefaultMappings(device.ModelType);

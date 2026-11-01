@@ -13,6 +13,7 @@ public class RemoteDevice
 {
     public string Id { get; set; } = string.Empty;
     public ulong BluetoothAddress { get; set; }
+    public Guid? ContainerId { get; set; }
     public string Name { get; set; } = string.Empty;
     public RemoteModelType ModelType { get; set; } = RemoteModelType.Unknown;
     public bool IsConnected { get; set; }

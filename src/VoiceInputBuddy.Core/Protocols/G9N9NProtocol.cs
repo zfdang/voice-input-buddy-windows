@@ -69,6 +69,11 @@ public static class G9N9NProtocol
 
         if (slice.Length < 2) return false;
 
+        if (slice[0] > IndexedConsumerUsages.Length || slice[1] > IndexedConsumerUsages.Length)
+        {
+            return false;
+        }
+
         for (int i = 0; i < 2; i++)
         {
             byte index = slice[i];
@@ -113,26 +118,67 @@ public static class G9N9NProtocol
 
     public static bool TryParseReport(ReadOnlySpan<byte> data, out List<RemoteButton> buttons)
     {
+        buttons = new();
+        if (data.IsEmpty) return false;
+
+        // With Report ID 1 (Report 1 is 1 byte ID + 2 bytes data)
         if (data.Length >= 3 && data[0] == 1)
         {
             return TryParseReport1(data, out buttons);
         }
+
+        // With Report ID 2 (Report 2 is 1 byte ID + 2 or 4 bytes data)
         if (data.Length >= 3 && data[0] == 2)
         {
             return TryParseReport2(data, out buttons);
         }
 
-        // Fallback checks when driver omits the Report ID byte
+        // Without Report ID:
+        // Case A: 2 bytes
         if (data.Length == 2)
         {
-            if (TryParseReport1(data, out buttons) && buttons.Count > 0) return true;
-        }
-        if (data.Length >= 2 && data.Length % 2 == 0)
-        {
-            if (TryParseReport2(data, out buttons) && buttons.Count > 0) return true;
+            // All-zero is the universal release report for 2-byte reports
+            if (data[0] == 0 && data[1] == 0)
+            {
+                buttons = new();
+                return true;
+            }
+
+            // Check Report 1 (indices <= 17)
+            if (TryParseReport1(data, out buttons) && buttons.Count > 0)
+            {
+                return true;
+            }
+
+            // Check Report 2 (16-bit usage)
+            if (TryParseReport2(data, out buttons) && buttons.Count > 0)
+            {
+                return true;
+            }
+
+            return false;
         }
 
-        buttons = new();
+        // Case B: Even length >= 4 without Report ID
+        if (data.Length >= 4 && data.Length % 2 == 0)
+        {
+            bool allZero = true;
+            for (int i = 0; i < data.Length; i++)
+            {
+                if (data[i] != 0) { allZero = false; break; }
+            }
+            if (allZero)
+            {
+                buttons = new();
+                return true;
+            }
+
+            if (TryParseReport2(data, out buttons) && buttons.Count > 0)
+            {
+                return true;
+            }
+        }
+
         return false;
     }
 }

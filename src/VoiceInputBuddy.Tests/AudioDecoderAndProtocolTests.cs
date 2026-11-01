@@ -209,4 +209,46 @@ public class AudioDecoderAndProtocolTests
         Assert.Contains(device.Mappings, m => m.Button == VoiceInputBuddy.Core.Models.RemoteButton.Ok);
         Assert.Contains(device.Mappings, m => m.Button == VoiceInputBuddy.Core.Models.RemoteButton.VolumeUp);
     }
+
+    [Fact]
+    public void G9N9NProtocol_TryParseReport_WithoutReportId_ParsesReleaseAndPress()
+    {
+        // 2-byte Report 1 without ID: index 3 is Up
+        byte[] pressWithoutId = [0x03, 0x00];
+        Assert.True(G9N9NProtocol.TryParseReport(pressWithoutId, out var pressButtons));
+        Assert.Single(pressButtons);
+        Assert.Equal(VoiceInputBuddy.Core.Models.RemoteButton.Up, pressButtons[0]);
+
+        // 2-byte release report without ID
+        byte[] releaseWithoutId = [0x00, 0x00];
+        Assert.True(G9N9NProtocol.TryParseReport(releaseWithoutId, out var releaseButtons));
+        Assert.Empty(releaseButtons);
+
+        // 4-byte release report without ID
+        byte[] release4WithoutId = [0x00, 0x00, 0x00, 0x00];
+        Assert.True(G9N9NProtocol.TryParseReport(release4WithoutId, out var release4Buttons));
+        Assert.Empty(release4Buttons);
+
+        // Invalid index (> 17) should be rejected
+        byte[] invalidIndex = [0x15, 0x00];
+        Assert.False(G9N9NProtocol.TryParseReport(invalidIndex, out _));
+    }
+
+    [Fact]
+    public void RemoteDevice_ContainerId_JsonRoundtrip()
+    {
+        var guid = Guid.NewGuid();
+        var device = new VoiceInputBuddy.Core.Models.RemoteDevice
+        {
+            Id = "TEST-DEV",
+            Name = "Chromecast Remote",
+            ContainerId = guid
+        };
+
+        string json = System.Text.Json.JsonSerializer.Serialize(device);
+        var deserialized = System.Text.Json.JsonSerializer.Deserialize<VoiceInputBuddy.Core.Models.RemoteDevice>(json);
+
+        Assert.NotNull(deserialized);
+        Assert.Equal(guid, deserialized.ContainerId);
+    }
 }

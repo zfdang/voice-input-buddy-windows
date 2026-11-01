@@ -149,6 +149,7 @@ public partial class OnboardingViewModel : ObservableObject
         {
             device.IsConnected = true;
             IsDeviceConnected = true;
+            device.ContainerId = _bt.ConnectedDeviceContainerId;
             if (device.Mappings == null || device.Mappings.Count == 0)
             {
                 device.Mappings = RemoteDevice.CreateDefaultMappings(device.ModelType);

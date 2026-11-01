@@ -117,7 +117,21 @@ public sealed class WasapiAudioPlayer : IDisposable
 
     public void Drain(int timeoutMs = 60)
     {
-        Thread.Sleep(timeoutMs);
+        lock (_lock)
+        {
+            if (_waveProvider != null)
+            {
+                int bytesLeft = _waveProvider.BufferedBytes;
+                // 16kHz 16-bit mono = 32,000 bytes/sec
+                int msLeft = (int)((bytesLeft / 32000.0) * 1000.0);
+                int waitTime = Math.Clamp(msLeft + 20, 20, 500);
+                Thread.Sleep(waitTime);
+            }
+            else
+            {
+                Thread.Sleep(timeoutMs);
+            }
+        }
     }
 
     public void Stop()

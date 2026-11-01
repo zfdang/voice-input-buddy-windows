@@ -1,15 +1,20 @@
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Interop;
 using VoiceInputBuddy.App.ViewModels;
+using VoiceInputBuddy.Platform.Windows.Input;
 
 namespace VoiceInputBuddy.App.Views;
 
 public partial class OnboardingWindow : Window
 {
+    private readonly RawInputReceiver _rawInputReceiver = new();
+
     public OnboardingWindow()
     {
         InitializeComponent();
         Loaded += OnLoaded;
+        Closed += OnClosed;
     }
 
     private void OnLoaded(object sender, RoutedEventArgs e)
@@ -18,7 +23,37 @@ public partial class OnboardingWindow : Window
         {
             vm.PropertyChanged += OnVmPropertyChanged;
             UpdatePanels(vm.CurrentStep);
+
+            _rawInputReceiver.ButtonEvent += (btn, isDown) =>
+            {
+                if (isDown)
+                {
+                    Dispatcher.Invoke(() => vm.NotifyButtonPressed(btn));
+                }
+            };
         }
+    }
+
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        var hwnd = new WindowInteropHelper(this).Handle;
+        _rawInputReceiver.Register(hwnd);
+        HwndSource.FromHwnd(hwnd)?.AddHook(WndProc);
+    }
+
+    private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (msg == 0x00FF) // WM_INPUT
+        {
+            _rawInputReceiver.ProcessMessage(lParam);
+        }
+        return IntPtr.Zero;
+    }
+
+    private void OnClosed(object? sender, EventArgs e)
+    {
+        _rawInputReceiver.Dispose();
     }
 
     private void OnVmPropertyChanged(object? sender, PropertyChangedEventArgs e)

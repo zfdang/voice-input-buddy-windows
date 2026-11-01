@@ -28,6 +28,13 @@ public sealed class RawInputReceiver : IDisposable
         public IntPtr wParam;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RAWHID
+    {
+        public uint dwSizeHid;
+        public uint dwCount;
+    }
+
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool RegisterRawInputDevices(
         [In] RAWINPUTDEVICE[] pRawInputDevices,
@@ -46,6 +53,8 @@ public sealed class RawInputReceiver : IDisposable
 
     private IntPtr _hwnd;
     private bool _isRegistered;
+    private readonly HashSet<RemoteButton> _pressedButtons = new();
+    private readonly object _lock = new();
 
     public bool Register(IntPtr hwnd)
     {
@@ -77,19 +86,56 @@ public sealed class RawInputReceiver : IDisposable
             if (GetRawInputData(lParam, RID_INPUT, buffer, ref dwSize, (uint)Marshal.SizeOf<RAWINPUTHEADER>()) == dwSize)
             {
                 int headerSize = Marshal.SizeOf<RAWINPUTHEADER>();
-                int rawDataSize = (int)dwSize - headerSize;
-                if (rawDataSize > 0)
-                {
-                    byte[] rawBytes = new byte[rawDataSize];
-                    Marshal.Copy(IntPtr.Add(buffer, headerSize), rawBytes, 0, rawDataSize);
+                int hidHeaderSize = Marshal.SizeOf<RAWHID>();
+                int dataOffset = headerSize + hidHeaderSize;
 
-                    // Check for G9N9N Report 2 or standard Consumer Control usages
-                    if (G9N9NProtocol.TryParseReport2(rawBytes, out var buttons))
+                if ((int)dwSize < dataOffset) return;
+
+                uint dwSizeHid = (uint)Marshal.ReadInt32(buffer, headerSize);
+                uint dwCount = (uint)Marshal.ReadInt32(buffer, headerSize + 4);
+
+                int totalRawBytes = (int)(dwSizeHid * dwCount);
+                if (totalRawBytes <= 0 || dataOffset + totalRawBytes > (int)dwSize) return;
+
+                byte[] rawBytes = new byte[totalRawBytes];
+                Marshal.Copy(IntPtr.Add(buffer, dataOffset), rawBytes, 0, totalRawBytes);
+
+                // Parse current held buttons
+                var currentHeld = new HashSet<RemoteButton>();
+                int reportSize = (int)dwSizeHid;
+                for (int i = 0; i < (int)dwCount; i++)
+                {
+                    var slice = rawBytes.AsSpan(i * reportSize, reportSize);
+                    if (G9N9NProtocol.TryParseReport2(slice, out var buttons))
                     {
-                        foreach (var btn in buttons)
+                        foreach (var b in buttons) currentHeld.Add(b);
+                    }
+                }
+
+                lock (_lock)
+                {
+                    // Newly pressed buttons -> KeyDown (isDown = true)
+                    foreach (var btn in currentHeld)
+                    {
+                        if (!_pressedButtons.Contains(btn))
                         {
                             ButtonEvent?.Invoke(btn, true);
                         }
+                    }
+
+                    // Released buttons -> KeyUp (isDown = false)
+                    foreach (var btn in _pressedButtons)
+                    {
+                        if (!currentHeld.Contains(btn))
+                        {
+                            ButtonEvent?.Invoke(btn, false);
+                        }
+                    }
+
+                    _pressedButtons.Clear();
+                    foreach (var btn in currentHeld)
+                    {
+                        _pressedButtons.Add(btn);
                     }
                 }
             }
@@ -103,5 +149,9 @@ public sealed class RawInputReceiver : IDisposable
     public void Dispose()
     {
         _isRegistered = false;
+        lock (_lock)
+        {
+            _pressedButtons.Clear();
+        }
     }
 }

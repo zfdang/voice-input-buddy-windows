@@ -11,6 +11,7 @@ public partial class MainViewModel : ObservableObject
 {
     private readonly ConfigService _configService;
     private readonly WinRtBluetoothManager _bluetoothManager;
+    private readonly RawInputReceiver _rawInputReceiver = new();
 
     [ObservableProperty]
     private string _currentTitle = "Voice Input Buddy (Windows)";
@@ -63,20 +64,81 @@ public partial class MainViewModel : ObservableObject
         _bluetoothManager.VoiceSessionStarted += () =>
         {
             IsVoiceActive = true;
-            // Pre-roll & Trigger hotkey
-            NativeInputSender.SendShortcutString(_configService.Current.InputTool.Shortcut);
+            string shortcut = _configService.Current.InputTool.Shortcut;
+            if (_configService.Current.InputTool.TriggerMode == VoiceTriggerMode.HoldToTalk)
+            {
+                NativeInputSender.SendShortcutDown(shortcut);
+            }
+            else
+            {
+                NativeInputSender.SendShortcutClick(shortcut);
+            }
         };
 
         _bluetoothManager.VoiceSessionEnded += () =>
         {
             IsVoiceActive = false;
             CurrentAudioLevel = 0f;
-            // Drain & End hotkey if hold-to-talk
+            string shortcut = _configService.Current.InputTool.Shortcut;
             if (_configService.Current.InputTool.TriggerMode == VoiceTriggerMode.HoldToTalk)
             {
-                NativeInputSender.SendShortcutString(_configService.Current.InputTool.Shortcut);
+                NativeInputSender.SendShortcutUp(shortcut);
+            }
+            else
+            {
+                NativeInputSender.SendShortcutClick(shortcut);
             }
         };
+
+        _rawInputReceiver.ButtonEvent += OnRawButtonEvent;
+    }
+
+    public void RegisterRawInput(IntPtr hwnd) => _rawInputReceiver.Register(hwnd);
+    public void ProcessRawInput(IntPtr lParam) => _rawInputReceiver.ProcessMessage(lParam);
+
+    private void OnRawButtonEvent(RemoteButton button, bool isDown)
+    {
+        if (button == RemoteButton.Voice)
+        {
+            if (isDown)
+            {
+                _ = _bluetoothManager.StartVoiceSessionAsync();
+            }
+            else
+            {
+                _ = _bluetoothManager.StopVoiceSessionAsync();
+            }
+            return;
+        }
+
+        // Non-voice buttons execute action on KeyDown
+        if (!isDown) return;
+
+        var selectedDev = _configService.Current.Devices.FirstOrDefault(d => d.Id == _configService.Current.SelectedDeviceId);
+        var mapping = selectedDev?.Mappings?.FirstOrDefault(m => m.Button == button);
+        if (mapping == null) return;
+
+        switch (mapping.ClickAction)
+        {
+            case ButtonActionType.KeyboardShortcut:
+                if (!string.IsNullOrEmpty(mapping.ClickShortcut))
+                {
+                    NativeInputSender.SendShortcutClick(mapping.ClickShortcut);
+                }
+                break;
+            case ButtonActionType.MediaControl:
+                if (mapping.ClickMedia != MediaCommand.None)
+                {
+                    NativeInputSender.SendMedia(mapping.ClickMedia);
+                }
+                break;
+            case ButtonActionType.TextSnippet:
+                if (!string.IsNullOrEmpty(mapping.ClickText))
+                {
+                    NativeInputSender.SendUnicodeText(mapping.ClickText);
+                }
+                break;
+        }
     }
 
     [RelayCommand]

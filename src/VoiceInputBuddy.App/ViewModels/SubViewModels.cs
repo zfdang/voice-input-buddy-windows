@@ -127,6 +127,36 @@ public partial class IntegrationsViewModel : ObservableObject
     [ObservableProperty]
     private VoiceTriggerMode _triggerMode;
 
+    public bool IsHoldToTalk
+    {
+        get => TriggerMode == VoiceTriggerMode.HoldToTalk;
+        set
+        {
+            if (value && TriggerMode != VoiceTriggerMode.HoldToTalk)
+            {
+                TriggerMode = VoiceTriggerMode.HoldToTalk;
+                OnPropertyChanged(nameof(IsHoldToTalk));
+                OnPropertyChanged(nameof(IsClickToToggle));
+                Save();
+            }
+        }
+    }
+
+    public bool IsClickToToggle
+    {
+        get => TriggerMode == VoiceTriggerMode.ClickToToggle;
+        set
+        {
+            if (value && TriggerMode != VoiceTriggerMode.ClickToToggle)
+            {
+                TriggerMode = VoiceTriggerMode.ClickToToggle;
+                OnPropertyChanged(nameof(IsHoldToTalk));
+                OnPropertyChanged(nameof(IsClickToToggle));
+                Save();
+            }
+        }
+    }
+
     [ObservableProperty]
     private string _shortcutText = string.Empty;
 

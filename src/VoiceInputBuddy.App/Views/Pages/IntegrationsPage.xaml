@@ -27,8 +27,8 @@
 
                     <TextBlock Text="触发行为方式：" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}" Margin="0,0,0,6"/>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
-                        <RadioButton Content="按住说话 (Hold-to-Talk)" IsChecked="True" Foreground="#FFF" Margin="0,0,16,0"/>
-                        <RadioButton Content="点按开始 / 结束 (Toggle)" Foreground="#FFF"/>
+                        <RadioButton Content="按住说话 (Hold-to-Talk)" IsChecked="{Binding IsHoldToTalk}" Foreground="#FFF" Margin="0,0,16,0"/>
+                        <RadioButton Content="点按开始 / 结束 (Toggle)" IsChecked="{Binding IsClickToToggle}" Foreground="#FFF"/>
                     </StackPanel>
 
                     <Button Content="💾 保存当前设置" HorizontalAlignment="Left" Padding="16,8" Background="#007ACC" Command="{Binding SaveCommand}"/>

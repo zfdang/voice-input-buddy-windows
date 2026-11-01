@@ -107,4 +107,29 @@ public class AudioDecoderAndProtocolTests
             Assert.Equal(40, size);
         }
     }
+
+    [Fact]
+    public void NativeInputSender_TryParseShortcut_ParsesModifiersAndKey()
+    {
+        bool ok = VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.TryParseShortcut(
+            "Ctrl+Shift+Alt+V", out var modifiers, out ushort mainKey);
+
+        Assert.True(ok);
+        Assert.Equal(3, modifiers.Count);
+        Assert.Contains(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_LCONTROL, modifiers);
+        Assert.Contains(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_LSHIFT, modifiers);
+        Assert.Contains(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_LMENU, modifiers);
+        Assert.Equal((ushort)'V', mainKey);
+    }
+
+    [Fact]
+    public void NativeInputSender_TryParseShortcut_SingleKey_Parsed()
+    {
+        bool ok = VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.TryParseShortcut(
+            "F1", out var modifiers, out ushort mainKey);
+
+        Assert.True(ok);
+        Assert.Empty(modifiers);
+        Assert.Equal(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_F1, mainKey);
+    }
 }

@@ -14,9 +14,15 @@ public partial class App : Application
 
     private void OnStartup(object sender, StartupEventArgs e)
     {
+        // Prevent shutdown when modal onboarding dialog closes
+        ShutdownMode = ShutdownMode.OnExplicitShutdown;
+
         _configService = new ConfigService();
         _bluetoothManager = new WinRtBluetoothManager();
         _mainViewModel = new MainViewModel(_configService, _bluetoothManager);
+
+        var mainWindow = new MainWindow { DataContext = _mainViewModel };
+        MainWindow = mainWindow;
 
         _mainViewModel.RequestOpenOnboarding += ShowOnboardingWindow;
 
@@ -25,8 +31,8 @@ public partial class App : Application
             ShowOnboardingWindow();
         }
 
-        var mainWindow = new MainWindow { DataContext = _mainViewModel };
         mainWindow.Show();
+        ShutdownMode = ShutdownMode.OnMainWindowClose;
     }
 
     private void ShowOnboardingWindow()

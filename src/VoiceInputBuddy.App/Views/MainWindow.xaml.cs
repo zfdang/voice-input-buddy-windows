@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Interop;
 using VoiceInputBuddy.App.ViewModels;
 using VoiceInputBuddy.App.Views.Pages;
 
@@ -17,6 +18,26 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         Loaded += OnLoaded;
+    }
+
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (DataContext is MainViewModel vm)
+        {
+            vm.RegisterRawInput(hwnd);
+        }
+        HwndSource.FromHwnd(hwnd)?.AddHook(WndProc);
+    }
+
+    private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (msg == 0x00FF && DataContext is MainViewModel vm) // WM_INPUT
+        {
+            vm.ProcessRawInput(lParam);
+        }
+        return IntPtr.Zero;
     }
 
     private void OnLoaded(object sender, RoutedEventArgs e)

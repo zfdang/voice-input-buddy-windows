@@ -104,14 +104,13 @@ public static class NativeInputSender
         return sent == inputs.Length;
     }
 
-    public static bool SendShortcutString(string shortcut)
+    public static bool TryParseShortcut(string shortcut, out List<ushort> modifiers, out ushort mainKey)
     {
+        modifiers = new List<ushort>();
+        mainKey = 0;
         if (string.IsNullOrWhiteSpace(shortcut)) return false;
 
         string[] parts = shortcut.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var modifiers = new List<ushort>();
-        ushort mainKey = 0;
-
         foreach (var p in parts)
         {
             string upper = p.ToUpperInvariant();
@@ -127,7 +126,32 @@ public static class NativeInputSender
             else if (upper.Length == 1 && upper[0] >= '0' && upper[0] <= '9') mainKey = upper[0];
         }
 
-        if (mainKey == 0) return false;
+        return mainKey != 0;
+    }
+
+    public static bool SendShortcutDown(string shortcut)
+    {
+        if (!TryParseShortcut(shortcut, out var modifiers, out ushort mainKey)) return false;
+        var inputs = new List<INPUT>();
+        foreach (var mod in modifiers) inputs.Add(CreateKeyInput(mod, false));
+        inputs.Add(CreateKeyInput(mainKey, false));
+        uint sent = SendInput((uint)inputs.Count, inputs.ToArray(), Marshal.SizeOf<INPUT>());
+        return sent == inputs.Count;
+    }
+
+    public static bool SendShortcutUp(string shortcut)
+    {
+        if (!TryParseShortcut(shortcut, out var modifiers, out ushort mainKey)) return false;
+        var inputs = new List<INPUT>();
+        inputs.Add(CreateKeyInput(mainKey, true));
+        for (int i = modifiers.Count - 1; i >= 0; i--) inputs.Add(CreateKeyInput(modifiers[i], true));
+        uint sent = SendInput((uint)inputs.Count, inputs.ToArray(), Marshal.SizeOf<INPUT>());
+        return sent == inputs.Count;
+    }
+
+    public static bool SendShortcutClick(string shortcut)
+    {
+        if (!TryParseShortcut(shortcut, out var modifiers, out ushort mainKey)) return false;
 
         var inputs = new List<INPUT>();
         foreach (var mod in modifiers) inputs.Add(CreateKeyInput(mod, false));
@@ -138,6 +162,8 @@ public static class NativeInputSender
         uint sent = SendInput((uint)inputs.Count, inputs.ToArray(), Marshal.SizeOf<INPUT>());
         return sent == inputs.Count;
     }
+
+    public static bool SendShortcutString(string shortcut) => SendShortcutClick(shortcut);
 
     public static bool SendMedia(MediaCommand command)
     {

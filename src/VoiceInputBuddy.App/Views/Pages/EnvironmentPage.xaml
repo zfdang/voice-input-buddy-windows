@@ -1,0 +1,28 @@
+<UserControl x:Class="VoiceInputBuddy.App.Views.Pages.EnvironmentPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" 
+             d:DesignHeight="550" d:DesignWidth="700">
+    <Grid>
+        <StackPanel Margin="0,0,0,20">
+            <DockPanel Margin="0,0,0,16">
+                <TextBlock Text="环境与驱动" FontSize="22" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}"/>
+                <Button Content="🔄 刷新状态" HorizontalAlignment="Right" Padding="12,6" Background="#007ACC" Command="{Binding RefreshStatusCommand}"/>
+            </DockPanel>
+
+            <TextBlock Text="系统音频驱动与运行环境检查：" Foreground="{StaticResource SecondaryTextBrush}" Margin="0,0,0,20"/>
+
+            <Border Background="{StaticResource CardBackgroundBrush}" Padding="18" CornerRadius="6" Margin="0,0,0,20">
+                <StackPanel>
+                    <TextBlock Text="VB-CABLE 虚拟麦克风驱动" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}" Margin="0,0,0,6"/>
+                    <TextBlock Text="{Binding StatusDescription}" Foreground="{StaticResource SecondaryTextBrush}" TextWrapping="Wrap" Margin="0,0,0,16"/>
+
+                    <TextBlock Text="官方下载指引与说明：" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}" Margin="0,0,0,6"/>
+                    <TextBlock Text="1. VB-CABLE 为商业闭源/Donationware 软件（已获微软官方 WHQL 认证签名）；&#x0a;2. 首次使用请前往 VB-Audio 官网 (vb-audio.com/Cable/) 下载并右键管理员身份运行安装；&#x0a;3. 安装完成后若提示需要重启，请重启电脑完成系统音频服务初始化。" Foreground="{StaticResource SecondaryTextBrush}" TextWrapping="Wrap"/>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </Grid>
+</UserControl>

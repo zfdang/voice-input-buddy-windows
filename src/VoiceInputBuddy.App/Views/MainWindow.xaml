@@ -1,0 +1,62 @@
+<Window x:Class="VoiceInputBuddy.App.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:VoiceInputBuddy.App.ViewModels"
+        xmlns:pages="clr-namespace:VoiceInputBuddy.App.Views.Pages"
+        mc:Ignorable="d"
+        Title="{Binding CurrentTitle}" Height="680" Width="980"
+        MinHeight="600" MinWidth="850"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource PrimaryBackgroundBrush}">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="220"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- Sidebar Navigation -->
+        <Border Grid.Column="0" Background="{StaticResource SidebarBackgroundBrush}" BorderBrush="{StaticResource BorderColorBrush}" BorderThickness="0,0,1,0">
+            <DockPanel LastChildFill="True">
+                <!-- App Logo & Title -->
+                <StackPanel DockPanel.Dock="Top" Margin="20,24,20,20">
+                    <TextBlock Text="Voice Input Buddy" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}"/>
+                    <TextBlock Text="语音搭子 (Windows)" FontSize="12" Foreground="{StaticResource SecondaryTextBrush}" Margin="0,4,0,0"/>
+                </StackPanel>
+
+                <!-- Audio Activity Bar at Bottom -->
+                <Border DockPanel.Dock="Bottom" Margin="16,10,16,16" Padding="12" Background="{StaticResource CardBackgroundBrush}" CornerRadius="6">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                            <Ellipse Width="8" Height="8" Margin="0,0,6,0"
+                                     Fill="{Binding IsConnected, Converter={x:Null}}"/>
+                            <TextBlock Text="{Binding ConnectedDeviceName}" FontSize="11" Foreground="{StaticResource SecondaryTextBrush}"/>
+                        </StackPanel>
+                        <ProgressBar Value="{Binding CurrentAudioLevel, Mode=OneWay}" Minimum="0" Maximum="1" Height="6" Background="#222" Foreground="#00CC66" BorderThickness="0"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Navigation Buttons -->
+                <StackPanel Margin="8,0">
+                    <Button Content="📱  设备连接" HorizontalContentAlignment="Left" Margin="0,4" Padding="14,10"
+                            Command="{Binding NavigateCommand}" CommandParameter="Devices"/>
+                    <Button Content="⌨️  按键映射" HorizontalContentAlignment="Left" Margin="0,4" Padding="14,10"
+                            Command="{Binding NavigateCommand}" CommandParameter="Mapping"/>
+                    <Button Content="🎙️  输入法集成" HorizontalContentAlignment="Left" Margin="0,4" Padding="14,10"
+                            Command="{Binding NavigateCommand}" CommandParameter="Integrations"/>
+                    <Button Content="🛡️  环境与驱动" HorizontalContentAlignment="Left" Margin="0,4" Padding="14,10"
+                            Command="{Binding NavigateCommand}" CommandParameter="Environment"/>
+                    <Button Content="⚙️  通用设置" HorizontalContentAlignment="Left" Margin="0,4" Padding="14,10"
+                            Command="{Binding NavigateCommand}" CommandParameter="Settings"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- Main Content Area -->
+        <Grid Grid.Column="1" Margin="24">
+            <!-- Dynamic Page Swap Handled in Code-Behind for Clean Simplicity -->
+            <ContentControl x:Name="PageContentContainer"/>
+        </Grid>
+    </Grid>
+</Window>

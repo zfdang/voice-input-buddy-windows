@@ -1,0 +1,149 @@
+<Window x:Class="VoiceInputBuddy.App.Views.OnboardingWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:VoiceInputBuddy.App.ViewModels"
+        mc:Ignorable="d"
+        Title="设置向导 - Voice Input Buddy" Height="600" Width="800"
+        ResizeMode="NoResize" WindowStartupLocation="CenterScreen"
+        Background="{StaticResource PrimaryBackgroundBrush}">
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Top Header & Stepper -->
+        <Border Grid.Row="0" Margin="0,0,0,16" Padding="0,0,0,14" BorderBrush="{StaticResource BorderColorBrush}" BorderThickness="0,0,0,1">
+            <DockPanel>
+                <TextBlock Text="{Binding StepTitle}" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}" VerticalAlignment="Center"/>
+                <TextBlock Text="{Binding CurrentStep, StringFormat='第 {0} / 8 步'}" Foreground="{StaticResource SecondaryTextBrush}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+            </DockPanel>
+        </Border>
+
+        <!-- Step Content Area (Dynamic Step Visibility) -->
+        <Grid Grid.Row="1" Margin="10,0">
+            <!-- Step 1: Welcome & Language -->
+            <StackPanel x:Name="Step1Panel" Visibility="Visible">
+                <TextBlock Text="欢迎使用 Voice Input Buddy（语音搭子）" FontSize="20" FontWeight="Bold" Foreground="{StaticResource PrimaryTextBrush}" Margin="0,0,0,10"/>
+                <TextBlock Text="本向导将引导您完成虚拟音频驱动检查、蓝牙遥控器连接与目标输入法快捷键配置。" Foreground="{StaticResource SecondaryTextBrush}" TextWrapping="Wrap" Margin="0,0,0,24"/>
+                
+                <TextBlock Text="界面显示语言：" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}" Margin="0,0,0,8"/>
+                <TextBlock Text="简体中文 (当前版本优先支持中文界面)" Foreground="{StaticResource SecondaryTextBrush}" Margin="0,0,0,24"/>
+            </StackPanel>
+
+            <!-- Step 2: Virtual Audio Driver Check -->
+            <StackPanel x:Name="Step2Panel" Visibility="Collapsed">
+                <TextBlock Text="检查虚拟麦克风驱动 (VB-CABLE)" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}" Margin="0,0,0,10"/>
+                <TextBlock Text="Voice Input Buddy 需要通过虚拟音频线路（CABLE Input / Output）将遥控器声音无缝送入微信输入法或豆包中。" Foreground="{StaticResource SecondaryTextBrush}" TextWrapping="Wrap" Margin="0,0,0,16"/>
+                
+                <Border Background="{StaticResource CardBackgroundBrush}" Padding="16" CornerRadius="6" Margin="0,0,0,16">
+                    <StackPanel>
+                        <TextBlock Text="{Binding DriverStatusMessage}" FontSize="14" Foreground="#FFF" TextWrapping="Wrap" Margin="0,0,0,14"/>
+                        <StackPanel Orientation="Horizontal">
+                            <Button Content="🔄 重新检测" Margin="0,0,10,0" Padding="14,6" Background="#007ACC" Command="{Binding RefreshDriverStatusCommand}"/>
+                            <Button Content="🌐 打开 VB-Audio 官网下载" Padding="14,6" Command="{Binding OpenOfficialWebsiteCommand}"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <!-- Step 3: Remote Pairing & Connection -->
+            <StackPanel x:Name="Step3Panel" Visibility="Collapsed">
+                <DockPanel Margin="0,0,0,10">
+                    <TextBlock Text="选择并连接您的遥控器" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}" VerticalAlignment="Center"/>
+                    <Button Content="🔍 扫描设备" HorizontalAlignment="Right" Padding="10,4" Background="#007ACC" Command="{Binding ToggleScanCommand}"/>
+                </DockPanel>
+                <TextBlock Text="请确保遥控器处于配对状态（如同时按住返回键+主页键闪烁），点击列表中发现的设备完成连接：" Foreground="{StaticResource SecondaryTextBrush}" TextWrapping="Wrap" Margin="0,0,0,14"/>
+
+                <ScrollViewer Height="180" VerticalScrollBarVisibility="Auto">
+                    <ItemsControl ItemsSource="{Binding DiscoveredDevices}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="{StaticResource CardBackgroundBrush}" Margin="0,0,0,6" Padding="10" CornerRadius="4">
+                                    <DockPanel LastChildFill="False">
+                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="#FFF" VerticalAlignment="Center"/>
+                                        <Button Content="连接" DockPanel.Dock="Right" Width="70"
+                                                Command="{Binding DataContext.ConnectDeviceCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                CommandParameter="{Binding}"/>
+                                    </DockPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <TextBlock Text="连接状态：" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}" Margin="0,10,0,4"/>
+                <TextBlock Text="{Binding IsDeviceConnected, Converter={x:Null}, FallbackValue='未连接'}" Foreground="#00CC66"/>
+            </StackPanel>
+
+            <!-- Step 4: Button Test -->
+            <StackPanel x:Name="Step4Panel" Visibility="Collapsed">
+                <TextBlock Text="遥控器按键响应测试" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}" Margin="0,0,0,10"/>
+                <TextBlock Text="请在遥控器上按下方向键、OK键或音量键，检查界面是否产生对应的高亮反馈：" Foreground="{StaticResource SecondaryTextBrush}" Margin="0,0,0,16"/>
+                <Border Background="{StaticResource CardBackgroundBrush}" Padding="20" CornerRadius="6" HorizontalAlignment="Left" Width="300">
+                    <TextBlock Text="{Binding LastPressedButtonName}" FontSize="18" FontWeight="Bold" Foreground="#00CC66" HorizontalAlignment="Center"/>
+                </Border>
+            </StackPanel>
+
+            <!-- Step 5: Voice & VU Meter Test -->
+            <StackPanel x:Name="Step5Panel" Visibility="Collapsed">
+                <TextBlock Text="麦克风拾音与动态波形测试" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}" Margin="0,0,0,10"/>
+                <TextBlock Text="按住遥控器语音键说话，观察下方电平指示条是否跟随声音跳动：" Foreground="{StaticResource SecondaryTextBrush}" Margin="0,0,0,20"/>
+                <ProgressBar Value="{Binding LiveAudioLevel}" Minimum="0" Maximum="1" Height="14" Background="#111" Foreground="#00CC66" BorderThickness="0" Margin="0,0,0,16"/>
+                <TextBlock Text="（若音量条有跳动，说明音频流与 ADPCM 解码工作正常）" FontSize="12" Foreground="{StaticResource SecondaryTextBrush}"/>
+            </StackPanel>
+
+            <!-- Step 6: IME Tool Configuration -->
+            <StackPanel x:Name="Step6Panel" Visibility="Collapsed">
+                <TextBlock Text="配置目标语音输入工具" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}" Margin="0,0,0,10"/>
+                <TextBlock Text="选择您正在使用的语音输入法，系统将自动配置匹配的快捷键与模式：" Foreground="{StaticResource SecondaryTextBrush}" TextWrapping="Wrap" Margin="0,0,0,14"/>
+
+                <WrapPanel Margin="0,0,0,14">
+                    <Button Content="微信输入法" Margin="0,0,8,8" Command="{Binding ApplyPresetCommand}" CommandParameter="WeChatInput"/>
+                    <Button Content="豆包输入法" Margin="0,0,8,8" Command="{Binding ApplyPresetCommand}" CommandParameter="DoubaoInput"/>
+                    <Button Content="Windows 听写 (Win+H)" Margin="0,0,8,8" Command="{Binding ApplyPresetCommand}" CommandParameter="WindowsDictation"/>
+                    <Button Content="Typeless" Margin="0,0,8,8" Command="{Binding ApplyPresetCommand}" CommandParameter="Typeless"/>
+                </WrapPanel>
+
+                <Border Background="{StaticResource CardBackgroundBrush}" Padding="14" CornerRadius="6" Margin="0,0,0,14">
+                    <StackPanel>
+                        <TextBlock Text="当前语音触发快捷键：" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}" Margin="0,0,0,6"/>
+                        <TextBox Text="{Binding ShortcutText, UpdateSourceTrigger=PropertyChanged}" Width="250" HorizontalAlignment="Left" Background="#1E1E1E" Foreground="#FFF" Padding="8,4" Margin="0,0,0,10"/>
+                        <TextBlock Text="麦克风输入端点要求：" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}" Margin="0,0,0,4"/>
+                        <TextBlock Text="请在目标输入法中将麦克风选择为「CABLE Output」；对于 Windows 听写，请将「CABLE Output」设为系统默认麦克风。" Foreground="{StaticResource SecondaryTextBrush}" TextWrapping="Wrap" FontSize="12"/>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <!-- Step 7: Live Transcription Verification -->
+            <StackPanel x:Name="Step7Panel" Visibility="Collapsed">
+                <TextBlock Text="真实输入法转写验收" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}" Margin="0,0,0,10"/>
+                <TextBlock Text="点击下方输入框使其获得焦点，按住遥控器语音键说一句：「今天天气真好」，核对文字是否成功上屏：" Foreground="{StaticResource SecondaryTextBrush}" TextWrapping="Wrap" Margin="0,0,0,14"/>
+                <TextBox Text="{Binding TranscriptionTestText, UpdateSourceTrigger=PropertyChanged}" Height="70" Background="#111" Foreground="#FFF" FontSize="14" Padding="10" TextWrapping="Wrap" Margin="0,0,0,14"/>
+                <CheckBox Content="我已确认上述输入法转写结果正确" IsChecked="{Binding IsTranscriptionVerified}" Foreground="#FFF"/>
+            </StackPanel>
+
+            <!-- Step 8: Completion -->
+            <StackPanel x:Name="Step8Panel" Visibility="Collapsed">
+                <TextBlock Text="🎉 配置全部完成！" FontSize="20" FontWeight="Bold" Foreground="#00CC66" Margin="0,0,0,10"/>
+                <TextBlock Text="所有音频链路与输入法快捷键已就绪。在任意应用程序或文档中，拿起遥控器按住说话即可畅享语音输入。" Foreground="{StaticResource SecondaryTextBrush}" TextWrapping="Wrap" Margin="0,0,0,20"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- Bottom Navigation & Validation Bar -->
+        <StackPanel Grid.Row="2" Margin="0,16,0,0">
+            <!-- Validation Error Alert -->
+            <TextBlock Text="{Binding ValidationError}" Foreground="#FF4444" FontWeight="SemiBold" Margin="0,0,0,10"
+                       Visibility="{Binding ValidationError, Converter={x:Null}}"/>
+            <Border Padding="0,10,0,0" BorderBrush="{StaticResource BorderColorBrush}" BorderThickness="0,1,0,0">
+                <DockPanel LastChildFill="False">
+                    <Button Content="上一步" DockPanel.Dock="Left" Width="100" Command="{Binding PreviousStepCommand}"/>
+                    <Button Content="下一步" DockPanel.Dock="Right" Width="120" Background="#007ACC" Command="{Binding NextStepCommand}"/>
+                </DockPanel>
+            </Border>
+        </StackPanel>
+    </Grid>
+</Window>

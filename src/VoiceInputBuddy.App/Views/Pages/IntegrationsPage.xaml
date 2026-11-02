@@ -1,0 +1,39 @@
+<UserControl x:Class="VoiceInputBuddy.App.Views.Pages.IntegrationsPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" 
+             d:DesignHeight="550" d:DesignWidth="700">
+    <Grid>
+        <StackPanel Margin="0,0,0,20">
+            <TextBlock Text="输入法集成" FontSize="22" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}" Margin="0,0,0,16"/>
+            <TextBlock Text="配置遥控器语音键触发的目标听写工具与快捷键：" Foreground="{StaticResource SecondaryTextBrush}" Margin="0,0,0,20"/>
+
+            <!-- Presets -->
+            <TextBlock Text="预设工具快速应用：" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}" Margin="0,0,0,10"/>
+            <WrapPanel Margin="0,0,0,24">
+                <Button Content="微信输入法" Margin="0,0,8,8" Command="{Binding ApplyPresetCommand}" CommandParameter="WeChatInput"/>
+                <Button Content="豆包输入法" Margin="0,0,8,8" Command="{Binding ApplyPresetCommand}" CommandParameter="DoubaoInput"/>
+                <Button Content="Windows 听写 (Win+H)" Margin="0,0,8,8" Command="{Binding ApplyPresetCommand}" CommandParameter="WindowsDictation"/>
+                <Button Content="Typeless" Margin="0,0,8,8" Command="{Binding ApplyPresetCommand}" CommandParameter="Typeless"/>
+            </WrapPanel>
+
+            <!-- Configuration Form -->
+            <Border Background="{StaticResource CardBackgroundBrush}" Padding="18" CornerRadius="6" Margin="0,0,0,20">
+                <StackPanel>
+                    <TextBlock Text="当前语音触发快捷键：" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}" Margin="0,0,0,6"/>
+                    <TextBox Text="{Binding ShortcutText, UpdateSourceTrigger=PropertyChanged}" Width="250" HorizontalAlignment="Left" Background="#1E1E1E" Foreground="#FFF" Padding="8,6" Margin="0,0,0,16"/>
+
+                    <TextBlock Text="触发行为方式：" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}" Margin="0,0,0,6"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                        <RadioButton Content="按住说话 (Hold-to-Talk)" IsChecked="{Binding IsHoldToTalk}" Foreground="#FFF" Margin="0,0,16,0"/>
+                        <RadioButton Content="点按开始 / 结束 (Toggle)" IsChecked="{Binding IsClickToToggle}" Foreground="#FFF"/>
+                    </StackPanel>
+
+                    <Button Content="💾 保存当前设置" HorizontalAlignment="Left" Padding="16,8" Background="#007ACC" Command="{Binding SaveCommand}"/>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </Grid>
+</UserControl>

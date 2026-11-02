@@ -1,0 +1,48 @@
+<UserControl x:Class="VoiceInputBuddy.App.Views.Pages.SettingsPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" 
+             d:DesignHeight="550" d:DesignWidth="700">
+    <Grid>
+        <StackPanel Margin="0,0,0,20">
+            <TextBlock Text="通用设置" FontSize="22" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}" Margin="0,0,0,16"/>
+
+            <!-- Rerun Wizard Button -->
+            <Border Background="{StaticResource CardBackgroundBrush}" Padding="16" CornerRadius="6" Margin="0,0,0,20">
+                <DockPanel LastChildFill="False">
+                    <StackPanel DockPanel.Dock="Left">
+                        <TextBlock Text="首次设置向导" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}"/>
+                        <TextBlock Text="重新运行全流程环境检查、设备配对与实际转写验收向导。" FontSize="12" Foreground="{StaticResource SecondaryTextBrush}" Margin="0,4,0,0"/>
+                    </StackPanel>
+                    <Button Content="🚀 重新运行向导" DockPanel.Dock="Right" Padding="14,8" Background="#007ACC" Command="{Binding RerunWizardCommand}"/>
+                </DockPanel>
+            </Border>
+
+            <!-- Diagnostics & Troubleshooting Logs -->
+            <Border Background="{StaticResource CardBackgroundBrush}" Padding="16" CornerRadius="6" Margin="0,0,0,20">
+                <DockPanel LastChildFill="False">
+                    <StackPanel DockPanel.Dock="Left" MaxWidth="500">
+                        <TextBlock Text="诊断日志 (Troubleshooting)" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}"/>
+                        <TextBlock Text="在本地记录蓝牙连接、ATVV 协议协商、按键映射与运行错误等排查信息。严禁且不记录任何语音音频或转写文本。" FontSize="12" Foreground="{StaticResource SecondaryTextBrush}" TextWrapping="Wrap" Margin="0,4,0,6"/>
+                        <TextBlock Text="{Binding LogDirectoryPath, StringFormat='存储路径: {0}'}" FontSize="11" Foreground="{StaticResource SecondaryTextBrush}" TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <Button Content="📁 打开日志文件夹" DockPanel.Dock="Right" VerticalAlignment="Center" Padding="14,8" Background="#2D2D30" Foreground="#FFF" Command="{Binding OpenLogFolderCommand}"/>
+                </DockPanel>
+            </Border>
+
+            <!-- Preferences -->
+            <Border Background="{StaticResource CardBackgroundBrush}" Padding="16" CornerRadius="6" Margin="0,0,0,20">
+                <StackPanel>
+                    <CheckBox Content="开机时自动在后台启动" IsChecked="{Binding LaunchAtStartup}" Foreground="#FFF" Margin="0,0,0,16"/>
+                    <CheckBox Content="关闭主窗口时最小化至系统托盘" IsChecked="{Binding MinimizeToTrayOnClose, Mode=TwoWay}" Foreground="#FFF" Margin="0,0,0,16"/>
+
+                    <TextBlock Text="关于 Voice Input Buddy (Windows)：" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}" Margin="0,0,0,6"/>
+                    <TextBlock Text="{Binding AppVersion, StringFormat='版本号: {0}'}" Foreground="{StaticResource SecondaryTextBrush}" Margin="0,0,0,4"/>
+                    <TextBlock Text="遵循 GPL-3.0-only 开源协议发布。" Foreground="{StaticResource SecondaryTextBrush}"/>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </Grid>
+</UserControl>

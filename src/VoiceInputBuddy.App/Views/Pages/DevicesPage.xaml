@@ -9,7 +9,7 @@
         <StackPanel Margin="0,0,0,20">
             <DockPanel Margin="0,0,0,16">
                 <TextBlock Text="设备连接" FontSize="22" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}"/>
-                <Button Content="{Binding IsScanning, Converter={x:Null}, FallbackValue='🔍 扫描设备'}" 
+                <Button Content="{Binding IsScanning, Converter={StaticResource BoolToScanTextConverter}, FallbackValue='🔍 扫描设备'}"
                         HorizontalAlignment="Right" Padding="12,6" Background="#007ACC"
                         Command="{Binding ToggleScanCommand}"/>
             </DockPanel>

@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Voice Input Buddy Contributors
+// SPDX-License-Identifier: GPL-3.0-only
+
 namespace VoiceInputBuddy.Core.Models;
 
 public enum RemoteModelType
@@ -5,6 +8,7 @@ public enum RemoteModelType
     Unknown = 0,
     XiaomiRC001,
     XiaomiRC003,
+    XiaomiARN9,
     GoogleG9N9N,
     GoogleGY3LE
 }

@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Voice Input Buddy Contributors
+// SPDX-License-Identifier: GPL-3.0-only
+
 using VoiceInputBuddy.Core.Models;
 
 namespace VoiceInputBuddy.Core.Protocols;
@@ -22,6 +25,7 @@ public static class G9N9NProtocol
         [0x00CD] = RemoteButton.PlayPause,
         [0x0077] = RemoteButton.YouTube,
         [0x0078] = RemoteButton.Netflix,
+        [0x0079] = RemoteButton.Custom,
         [0x0189] = RemoteButton.Input,
         [0x0089] = RemoteButton.Input,
         [0x019E] = RemoteButton.Power,

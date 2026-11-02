@@ -1,3 +1,7 @@
+// Copyright (C) 2026 Voice Input Buddy Contributors
+// SPDX-License-Identifier: GPL-3.0-only
+
+using System.Runtime.InteropServices;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
 using VoiceInputBuddy.Core.Diagnostics;
@@ -43,8 +47,8 @@ public static class VirtualAudioAuditor
         }
         catch (Exception ex)
         {
-            AppLogger.Warn($"VB-CABLE audit failed with exception: {ex.Message}, returning RebootRequired", "VirtualAudioAuditor");
-            return DriverReadinessStatus.RebootRequired;
+            AppLogger.Warn($"VB-CABLE audit failed with exception: {ex.Message}", "VirtualAudioAuditor");
+            return DriverReadinessStatus.InitializationFailed;
         }
     }
 
@@ -69,9 +73,19 @@ public sealed class WasapiAudioPlayer : IDisposable
     private WasapiOut? _wasapiOut;
     private BufferedWaveProvider? _waveProvider;
     private readonly WaveFormat _format = new(16000, 16, 1);
+    private byte[] _sampleByteBuffer = new byte[4096];
     private readonly object _lock = new();
 
-    public bool IsActive => _wasapiOut != null && _wasapiOut.PlaybackState == PlaybackState.Playing;
+    public bool IsActive
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _wasapiOut != null && _wasapiOut.PlaybackState == PlaybackState.Playing;
+            }
+        }
+    }
 
     public bool Start(MMDevice? device = null)
     {
@@ -111,23 +125,26 @@ public sealed class WasapiAudioPlayer : IDisposable
 
     public void WriteSamples(ReadOnlySpan<short> samples)
     {
+        if (samples.IsEmpty) return;
+
         lock (_lock)
         {
             if (_waveProvider == null) return;
 
-            byte[] bytes = new byte[samples.Length * 2];
-            for (int i = 0; i < samples.Length; i++)
+            int byteCount = samples.Length * 2;
+            if (_sampleByteBuffer.Length < byteCount)
             {
-                bytes[i * 2] = (byte)(samples[i] & 0xFF);
-                bytes[i * 2 + 1] = (byte)((samples[i] >> 8) & 0xFF);
+                Array.Resize(ref _sampleByteBuffer, Math.Max(byteCount, _sampleByteBuffer.Length * 2));
             }
 
-            _waveProvider.AddSamples(bytes, 0, bytes.Length);
+            MemoryMarshal.AsBytes(samples).CopyTo(_sampleByteBuffer);
+            _waveProvider.AddSamples(_sampleByteBuffer, 0, byteCount);
         }
     }
 
-    public void Drain(int timeoutMs = 60)
+    public async Task DrainAsync(int timeoutMs = 60, CancellationToken ct = default)
     {
+        int waitTime;
         lock (_lock)
         {
             if (_waveProvider != null)
@@ -135,14 +152,39 @@ public sealed class WasapiAudioPlayer : IDisposable
                 int bytesLeft = _waveProvider.BufferedBytes;
                 // 16kHz 16-bit mono = 32,000 bytes/sec
                 int msLeft = (int)((bytesLeft / 32000.0) * 1000.0);
-                int waitTime = Math.Clamp(msLeft + 20, 20, 500);
-                Thread.Sleep(waitTime);
+                waitTime = Math.Clamp(msLeft + 20, 20, 500);
             }
             else
             {
-                Thread.Sleep(timeoutMs);
+                waitTime = timeoutMs;
             }
         }
+
+        try
+        {
+            await Task.Delay(waitTime, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    public void Drain(int timeoutMs = 60)
+    {
+        int waitTime;
+        lock (_lock)
+        {
+            if (_waveProvider != null)
+            {
+                int bytesLeft = _waveProvider.BufferedBytes;
+                int msLeft = (int)((bytesLeft / 32000.0) * 1000.0);
+                waitTime = Math.Clamp(msLeft + 20, 20, 500);
+            }
+            else
+            {
+                waitTime = timeoutMs;
+            }
+        }
+
+        Thread.Sleep(waitTime);
     }
 
     public void Stop()

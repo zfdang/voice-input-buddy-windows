@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Voice Input Buddy Contributors
+// SPDX-License-Identifier: GPL-3.0-only
+
 namespace VoiceInputBuddy.Core.Models;
 
 public enum RemoteButton
@@ -20,7 +23,8 @@ public enum RemoteButton
     Netflix,
     Input,
     PlayPause,
-    LiveTv
+    LiveTv,
+    Custom
 }
 
 public enum ButtonActionType

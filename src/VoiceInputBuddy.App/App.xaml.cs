@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Voice Input Buddy Contributors
+// SPDX-License-Identifier: GPL-3.0-only
+
 using System.Windows;
 using VoiceInputBuddy.App.ViewModels;
 using VoiceInputBuddy.App.Views;
@@ -66,6 +69,12 @@ public partial class App : Application
         {
             AppLogger.Info("First-time setup detected: opening Onboarding wizard", "App");
             ShowOnboardingWindow();
+            if (!_configService.Current.HasCompletedOnboarding)
+            {
+                AppLogger.Info("First-time setup was not completed, shutting down application.", "App");
+                Shutdown();
+                return;
+            }
         }
 
         // Auto-reconnect to previously saved remote device
@@ -96,7 +105,12 @@ public partial class App : Application
         var onboardingVm = new OnboardingViewModel(_configService, _bluetoothManager);
         _mainViewModel.ActiveOnboardingVm = onboardingVm;
 
-        var onboardingWin = new OnboardingWindow { DataContext = onboardingVm, Owner = MainWindow };
+        var onboardingWin = new OnboardingWindow { DataContext = onboardingVm };
+        if (MainWindow is { IsVisible: true })
+        {
+            onboardingWin.Owner = MainWindow;
+        }
+
         onboardingVm.RequestClose += () => onboardingWin.Close();
         try
         {
@@ -105,6 +119,7 @@ public partial class App : Application
         }
         finally
         {
+            onboardingVm.Dispose();
             _mainViewModel.ActiveOnboardingVm = null;
             _mainViewModel.IntegrationsVm.Reload();
             _mainViewModel.MappingVm.LoadMappings();

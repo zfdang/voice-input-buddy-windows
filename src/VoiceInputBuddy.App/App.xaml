@@ -1,8 +1,14 @@
 <Application x:Class="VoiceInputBuddy.App.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:converters="clr-namespace:VoiceInputBuddy.App.Converters"
              Startup="OnStartup">
     <Application.Resources>
+        <!-- Value Converters -->
+        <converters:BoolToBrushConverter x:Key="BoolToBrushConverter"/>
+        <converters:StringToVisibilityConverter x:Key="StringToVisibilityConverter"/>
+        <converters:BoolToScanTextConverter x:Key="BoolToScanTextConverter"/>
+
         <!-- Fluent Dark/Light Theme Colors -->
         <SolidColorBrush x:Key="PrimaryBackgroundBrush" Color="#1E1E1E"/>
         <SolidColorBrush x:Key="SidebarBackgroundBrush" Color="#252526"/>

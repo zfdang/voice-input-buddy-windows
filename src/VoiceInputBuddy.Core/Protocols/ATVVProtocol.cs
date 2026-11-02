@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Voice Input Buddy Contributors
+// SPDX-License-Identifier: GPL-3.0-only
+
 namespace VoiceInputBuddy.Core.Protocols;
 
 public record ATVVCapabilities(
@@ -82,7 +85,8 @@ public static class ATVVProtocol
             interaction = 0;
         }
 
-        int frameSize = (bytes[5] << 8) | bytes[6];
+        int rawFrameSize = (bytes[5] << 8) | bytes[6];
+        int frameSize = (rawFrameSize <= 0 || rawFrameSize > 512) ? 120 : rawFrameSize;
         byte selectedCodec = (codecs & 0x02) != 0 ? (byte)0x02 : (byte)0x01;
         double sampleRate = (selectedCodec == 0x02) ? 16000.0 : 8000.0;
 
@@ -90,7 +94,7 @@ public static class ATVVProtocol
             Version: version,
             Codecs: codecs,
             Interaction: interaction,
-            FrameSize: frameSize == 0 ? 120 : frameSize,
+            FrameSize: frameSize,
             SelectedCodec: selectedCodec,
             SampleRate: sampleRate
         );
@@ -161,12 +165,20 @@ public sealed class ATVVFrameAccumulator
         }
 
         var frames = new List<byte[]>();
-        while (_pending.Count >= frameSize)
+        int offset = 0;
+        while (_pending.Count - offset >= frameSize)
         {
-            byte[] frame = _pending.GetRange(0, frameSize).ToArray();
-            _pending.RemoveRange(0, frameSize);
+            byte[] frame = new byte[frameSize];
+            _pending.CopyTo(offset, frame, 0, frameSize);
             frames.Add(frame);
+            offset += frameSize;
         }
+
+        if (offset > 0)
+        {
+            _pending.RemoveRange(0, offset);
+        }
+
         return frames;
     }
 

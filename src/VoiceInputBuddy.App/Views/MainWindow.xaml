@@ -30,7 +30,7 @@
                     <StackPanel>
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                             <Ellipse Width="8" Height="8" Margin="0,0,6,0"
-                                     Fill="{Binding IsConnected, Converter={x:Null}}"/>
+                                     Fill="{Binding IsConnected, Converter={StaticResource BoolToBrushConverter}}"/>
                             <TextBlock Text="{Binding ConnectedDeviceName}" FontSize="11" Foreground="{StaticResource SecondaryTextBrush}"/>
                         </StackPanel>
                         <ProgressBar Value="{Binding CurrentAudioLevel, Mode=OneWay}" Minimum="0" Maximum="1" Height="6" Background="#222" Foreground="#00CC66" BorderThickness="0"/>

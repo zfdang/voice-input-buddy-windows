@@ -87,7 +87,7 @@ public sealed class RemoteVoiceKeyGuard(Func<bool> voiceSessionActive) : IDispos
                     // can release the injected hold before our balanced key-up.
                     if (_ownsF5)
                     {
-                        if (!voiceSessionActive() || (Environment.TickCount64 - _holdStartedAt) > MaxHoldDurationMs)
+                        if ((Environment.TickCount64 - _holdStartedAt) > MaxHoldDurationMs)
                         {
                             _ownsF5 = false;
                         }

@@ -257,24 +257,33 @@ public partial class MappingItemViewModel : ObservableObject
         [ButtonActionType.None, ButtonActionType.ContinuousRepeat];
 
     private readonly Action? _onModified;
+    private bool _isInitializing;
 
     public MappingItemViewModel(ButtonMapping source, Action? onModified = null)
     {
-        Source = source;
-        _onModified = onModified;
-        ClickAction = source.ClickAction;
-        ClickShortcut = source.ClickShortcut ?? string.Empty;
-        ClickMedia = source.ClickMedia != MediaCommand.None ? source.ClickMedia : MediaCommand.PlayPause;
-        ClickText = source.ClickText ?? string.Empty;
-        LongPressAction = source.LongPressAction;
+        _isInitializing = true;
+        try
+        {
+            Source = source;
+            _onModified = onModified;
+            ClickAction = source.ClickAction;
+            ClickShortcut = source.ClickShortcut ?? string.Empty;
+            ClickMedia = source.ClickMedia != MediaCommand.None ? source.ClickMedia : MediaCommand.PlayPause;
+            ClickText = source.ClickText ?? string.Empty;
+            LongPressAction = source.LongPressAction;
 
-        if (source.ClickAction == ButtonActionType.TextSnippet)
-        {
-            ParameterText = ClickText;
+            if (source.ClickAction == ButtonActionType.TextSnippet)
+            {
+                ParameterText = ClickText;
+            }
+            else
+            {
+                ParameterText = ClickShortcut;
+            }
         }
-        else
+        finally
         {
-            ParameterText = ClickShortcut;
+            _isInitializing = false;
         }
     }
 
@@ -282,6 +291,8 @@ public partial class MappingItemViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(TextOrShortcutVisibility));
         OnPropertyChanged(nameof(MediaVisibility));
+
+        if (_isInitializing) return;
 
         if (value == ButtonActionType.TextSnippet && string.IsNullOrEmpty(ParameterText))
         {
@@ -298,18 +309,21 @@ public partial class MappingItemViewModel : ObservableObject
 
     partial void OnParameterTextChanged(string value)
     {
+        if (_isInitializing) return;
         ApplyBack();
         _onModified?.Invoke();
     }
 
     partial void OnClickMediaChanged(MediaCommand value)
     {
+        if (_isInitializing) return;
         ApplyBack();
         _onModified?.Invoke();
     }
 
     partial void OnLongPressActionChanged(ButtonActionType value)
     {
+        if (_isInitializing) return;
         ApplyBack();
         _onModified?.Invoke();
     }

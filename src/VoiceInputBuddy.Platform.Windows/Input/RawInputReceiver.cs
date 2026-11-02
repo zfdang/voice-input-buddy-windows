@@ -171,6 +171,71 @@ public sealed class RawInputReceiver : IDisposable
         return false;
     }
 
+    public static bool IsKnownRemoteDevice(IntPtr hDevice, string devicePath)
+    {
+        if (GetHidDeviceInfo(hDevice, out uint vid, out _))
+        {
+            if (vid == G9N9NProtocol.VendorId || vid == 0x2717)
+            {
+                return true;
+            }
+            if (vid != 0)
+            {
+                return false;
+            }
+        }
+
+        if (!string.IsNullOrEmpty(devicePath))
+        {
+            string upper = devicePath.ToUpperInvariant();
+            if (upper.Contains("VID_18D1") || upper.Contains("VID&000218D1") ||
+                upper.Contains("VID_2717") || upper.Contains("VID&00022717"))
+            {
+                return true;
+            }
+            // Standard PC keyboards / other USB devices with explicit vendor IDs or ACPI paths
+            if (upper.Contains("VID_") || upper.Contains("VID&") || upper.Contains("ACPI#PNP0303"))
+            {
+                return false;
+            }
+        }
+
+        return false;
+    }
+
+    public static bool EvaluateDeviceMatch(Guid? targetContainerId, IntPtr hDevice, string devicePath)
+    {
+        Guid? deviceContainerId = GetDeviceContainerId(devicePath);
+
+        if (targetContainerId.HasValue)
+        {
+            if (deviceContainerId.HasValue)
+            {
+                // Strict check: if both have Container ID, they MUST match!
+                return deviceContainerId.Value == targetContainerId.Value;
+            }
+
+            // Target remote is known, but incoming device interface has no Container ID.
+            // Require verified remote identity (VID / device path); unverified devices (standard keyboards) must be rejected.
+            return IsKnownRemoteDevice(hDevice, devicePath);
+        }
+
+        // 2. If target remote Container ID is not yet known (e.g. before pairing), only admit verified remotes
+        if (IsKnownRemoteDevice(hDevice, devicePath))
+        {
+            return true;
+        }
+
+        // 3. Allow pass-through ONLY in simulated mock test environments (IntPtr.Zero and empty path)
+        if (hDevice == IntPtr.Zero && string.IsNullOrEmpty(devicePath))
+        {
+            return true;
+        }
+
+        // All other unverified devices (standard keyboards, mice, other USB peripherals) are rejected
+        return false;
+    }
+
     public static string? GetDevicePath(IntPtr hDevice)
     {
         if (hDevice == IntPtr.Zero) return null;

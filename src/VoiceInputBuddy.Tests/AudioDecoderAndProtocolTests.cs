@@ -381,4 +381,91 @@ public class AudioDecoderAndProtocolTests
         Assert.Equal(VoiceInputBuddy.Core.Models.RemoteButton.PlayPause, VoiceInputBuddy.Platform.Windows.Input.RawInputReceiver.MapVirtualKeyToRemoteButton(0xB3));
         Assert.Equal(VoiceInputBuddy.Core.Models.RemoteButton.None, VoiceInputBuddy.Platform.Windows.Input.RawInputReceiver.MapVirtualKeyToRemoteButton(0xFF));
     }
+
+    [Fact]
+    public void RawInputReceiver_IsKnownRemoteDevice_IdentifiesGoogleAndXiaomiRemotes()
+    {
+        // Google G9N9N Voice Remote path patterns
+        Assert.True(VoiceInputBuddy.Platform.Windows.Input.RawInputReceiver.IsKnownRemoteDevice(
+            IntPtr.Zero, @"\\?\HID#{00001124-0000-1000-8000-00805f9b34fb}_VID&000218d1_PID&9450#9&30f9a2b5&0&0000#{4d1e55b2-f16f-11cf-88cb-001111000030}"));
+        Assert.True(VoiceInputBuddy.Platform.Windows.Input.RawInputReceiver.IsKnownRemoteDevice(
+            IntPtr.Zero, @"\\?\HID#VID_18D1&PID_9450#9&30f9a2b5&0&0000#{4d1e55b2-f16f-11cf-88cb-001111000030}"));
+
+        // Xiaomi Bluetooth Remote path patterns
+        Assert.True(VoiceInputBuddy.Platform.Windows.Input.RawInputReceiver.IsKnownRemoteDevice(
+            IntPtr.Zero, @"\\?\HID#{00001124-0000-1000-8000-00805f9b34fb}_VID&00022717_PID&0030#..."));
+        Assert.True(VoiceInputBuddy.Platform.Windows.Input.RawInputReceiver.IsKnownRemoteDevice(
+            IntPtr.Zero, @"\\?\HID#VID_2717&PID_0030#..."));
+    }
+
+    [Fact]
+    public void RawInputReceiver_IsKnownRemoteDevice_RejectsStandardPCKeyboards()
+    {
+        // Standard laptop internal PS/2 keyboard
+        Assert.False(VoiceInputBuddy.Platform.Windows.Input.RawInputReceiver.IsKnownRemoteDevice(
+            IntPtr.Zero, @"\\?\ACPI#PNP0303#4&28f2378f&0#{884b96c3-56ef-11d1-bc8c-00a0c91405dd}"));
+
+        // Logitech USB Keyboard
+        Assert.False(VoiceInputBuddy.Platform.Windows.Input.RawInputReceiver.IsKnownRemoteDevice(
+            IntPtr.Zero, @"\\?\HID#VID_046D&PID_C52B&MI_00#8&2120014a&0&0000#{884b96c3-56ef-11d1-bc8c-00a0c91405dd}"));
+
+        // Microsoft USB Keyboard
+        Assert.False(VoiceInputBuddy.Platform.Windows.Input.RawInputReceiver.IsKnownRemoteDevice(
+            IntPtr.Zero, @"\\?\HID#VID_045E&PID_0750#..."));
+
+        // Unverified / arbitrary device path
+        Assert.False(VoiceInputBuddy.Platform.Windows.Input.RawInputReceiver.IsKnownRemoteDevice(
+            IntPtr.Zero, "unknown_peripheral_path"));
+    }
+
+    [Fact]
+    public async Task WinRtBluetoothManager_StopVoiceSessionDuringOpening_CancelsAndResetsToIdle()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        using var manager = new VoiceInputBuddy.Platform.Windows.Bluetooth.WinRtBluetoothManager();
+
+        // Simulate Opening state via reflection
+        var stateField = typeof(VoiceInputBuddy.Platform.Windows.Bluetooth.WinRtBluetoothManager)
+            .GetField("_sessionState", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        Assert.NotNull(stateField);
+        stateField.SetValue(manager, VoiceInputBuddy.Platform.Windows.Bluetooth.BluetoothSessionState.Opening);
+
+        Assert.Equal(VoiceInputBuddy.Platform.Windows.Bluetooth.BluetoothSessionState.Opening, manager.SessionState);
+
+        // User quickly releases voice key while in Opening
+        bool stopped = await manager.StopVoiceSessionAsync();
+
+        Assert.True(stopped);
+        // Session state MUST immediately reset to Idle so it does not get stuck in Opening
+        Assert.Equal(VoiceInputBuddy.Platform.Windows.Bluetooth.BluetoothSessionState.Idle, manager.SessionState);
+    }
+
+    [Fact]
+    public void RawInputReceiver_EvaluateDeviceMatch_RejectsNormalKeyboardAndAdmitsRemote()
+    {
+        Guid targetContainer = Guid.Parse("11223344-5566-7788-99aa-bbccddeeff00");
+        string keyboardPath = @"\\?\ACPI#PNP0303#4&28f2378f&0#{884b96c3-56ef-11d1-bc8c-00a0c91405dd}";
+        string remotePath = @"\\?\HID#{00001124-0000-1000-8000-00805f9b34fb}_VID&000218d1_PID&9450#9&30f9a2b5&0&0000#{4d1e55b2-f16f-11cf-88cb-001111000030}";
+
+        // When target remote is known: normal keyboard MUST be rejected!
+        Assert.False(VoiceInputBuddy.Platform.Windows.Input.RawInputReceiver.EvaluateDeviceMatch(
+            targetContainer, (IntPtr)1234, keyboardPath));
+
+        // When target remote is known: remote with matching path/VID is admitted even if interface container ID is null
+        Assert.True(VoiceInputBuddy.Platform.Windows.Input.RawInputReceiver.EvaluateDeviceMatch(
+            targetContainer, (IntPtr)1234, remotePath));
+
+        // When target remote is unknown (null): normal keyboard MUST be rejected!
+        Assert.False(VoiceInputBuddy.Platform.Windows.Input.RawInputReceiver.EvaluateDeviceMatch(
+            null, (IntPtr)1234, keyboardPath));
+
+        // When target remote is unknown (null): verified remote is admitted
+        Assert.True(VoiceInputBuddy.Platform.Windows.Input.RawInputReceiver.EvaluateDeviceMatch(
+            null, (IntPtr)1234, remotePath));
+
+        // Simulated mock unit tests (IntPtr.Zero and empty path) are admitted
+        Assert.True(VoiceInputBuddy.Platform.Windows.Input.RawInputReceiver.EvaluateDeviceMatch(
+            null, IntPtr.Zero, ""));
+    }
 }

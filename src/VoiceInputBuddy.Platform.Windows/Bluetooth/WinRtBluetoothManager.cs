@@ -139,20 +139,22 @@ public sealed class WinRtBluetoothManager : IDisposable
         try
         {
             var device = await BluetoothLEDevice.FromBluetoothAddressAsync(bluetoothAddress);
-            if (device == null)
-            {
-                AppLogger.Error($"BluetoothLEDevice.FromBluetoothAddressAsync returned null for 0x{bluetoothAddress:X12}", component: "BluetoothManager");
-                CleanupAttempt(null);
-                return false;
-            }
-
             lock (_stateLock)
             {
                 if (targetConnGen != _connectionGeneration)
                 {
-                    device.Dispose();
+                    device?.Dispose();
                     return false;
                 }
+
+                if (device == null)
+                {
+                    AppLogger.Error($"BluetoothLEDevice.FromBluetoothAddressAsync returned null for 0x{bluetoothAddress:X12}", component: "BluetoothManager");
+                    CleanupAttempt(null);
+                    ConnectionStatusChanged?.Invoke(false, "无法获取蓝牙设备");
+                    return false;
+                }
+
                 _connectedDevice = device;
                 _connectedDevice.ConnectionStatusChanged += OnDeviceConnectionStatusChanged;
             }
@@ -161,13 +163,6 @@ public sealed class WinRtBluetoothManager : IDisposable
 
             // Discover Service
             var servicesResult = await device.GetGattServicesForUuidAsync(ATVVProtocol.ServiceUuid);
-            if (servicesResult.Status != GattCommunicationStatus.Success || servicesResult.Services.Count == 0)
-            {
-                AppLogger.Error($"Failed to discover ATVV GATT service {ATVVProtocol.ServiceUuid}: Status={servicesResult.Status}, Count={servicesResult.Services.Count}", component: "BluetoothManager");
-                CleanupAttempt(device);
-                return false;
-            }
-
             lock (_stateLock)
             {
                 if (targetConnGen != _connectionGeneration)
@@ -175,22 +170,31 @@ public sealed class WinRtBluetoothManager : IDisposable
                     device.Dispose();
                     return false;
                 }
+
+                if (servicesResult.Status != GattCommunicationStatus.Success || servicesResult.Services.Count == 0)
+                {
+                    AppLogger.Error($"Failed to discover ATVV GATT service {ATVVProtocol.ServiceUuid}: Status={servicesResult.Status}, Count={servicesResult.Services.Count}", component: "BluetoothManager");
+                    CleanupAttempt(device);
+                    ConnectionStatusChanged?.Invoke(false, "未找到语音服务 (ATVV)");
+                    return false;
+                }
             }
 
             var service = servicesResult.Services[0];
             var charsResult = await service.GetCharacteristicsAsync();
-            if (charsResult.Status != GattCommunicationStatus.Success)
-            {
-                AppLogger.Error($"Failed to discover ATVV characteristics: Status={charsResult.Status}", component: "BluetoothManager");
-                CleanupAttempt(device);
-                return false;
-            }
-
             lock (_stateLock)
             {
                 if (targetConnGen != _connectionGeneration)
                 {
                     device.Dispose();
+                    return false;
+                }
+
+                if (charsResult.Status != GattCommunicationStatus.Success)
+                {
+                    AppLogger.Error($"Failed to discover ATVV characteristics: Status={charsResult.Status}", component: "BluetoothManager");
+                    CleanupAttempt(device);
+                    ConnectionStatusChanged?.Invoke(false, "获取服务特征失败");
                     return false;
                 }
             }
@@ -209,7 +213,18 @@ public sealed class WinRtBluetoothManager : IDisposable
             if (tx == null || audio == null || control == null)
             {
                 AppLogger.Error($"Missing required ATVV characteristics: TX={(tx != null)}, Audio={(audio != null)}, Control={(control != null)}", component: "BluetoothManager");
-                CleanupAttempt(device);
+                lock (_stateLock)
+                {
+                    if (targetConnGen == _connectionGeneration)
+                    {
+                        CleanupAttempt(device);
+                        ConnectionStatusChanged?.Invoke(false, "缺少必要的 ATVV 特征");
+                    }
+                    else
+                    {
+                        device.Dispose();
+                    }
+                }
                 return false;
             }
 
@@ -220,13 +235,6 @@ public sealed class WinRtBluetoothManager : IDisposable
             // Subscribe notifications
             var audioStatus = await audio.WriteClientCharacteristicConfigurationDescriptorAsync(
                 GattClientCharacteristicConfigurationDescriptorValue.Notify);
-            if (audioStatus != GattCommunicationStatus.Success)
-            {
-                AppLogger.Error($"Failed to subscribe to Audio notifications: Status={audioStatus}", component: "BluetoothManager");
-                CleanupAttempt(device);
-                return false;
-            }
-
             lock (_stateLock)
             {
                 if (targetConnGen != _connectionGeneration)
@@ -234,23 +242,32 @@ public sealed class WinRtBluetoothManager : IDisposable
                     device.Dispose();
                     return false;
                 }
+
+                if (audioStatus != GattCommunicationStatus.Success)
+                {
+                    AppLogger.Error($"Failed to subscribe to Audio notifications: Status={audioStatus}", component: "BluetoothManager");
+                    CleanupAttempt(device);
+                    ConnectionStatusChanged?.Invoke(false, "订阅音频通知失败");
+                    return false;
+                }
             }
             audio.ValueChanged += OnAudioValueChanged;
 
             var controlStatus = await control.WriteClientCharacteristicConfigurationDescriptorAsync(
                 GattClientCharacteristicConfigurationDescriptorValue.Notify);
-            if (controlStatus != GattCommunicationStatus.Success)
-            {
-                AppLogger.Error($"Failed to subscribe to Control notifications: Status={controlStatus}", component: "BluetoothManager");
-                CleanupAttempt(device);
-                return false;
-            }
-
             lock (_stateLock)
             {
                 if (targetConnGen != _connectionGeneration)
                 {
                     device.Dispose();
+                    return false;
+                }
+
+                if (controlStatus != GattCommunicationStatus.Success)
+                {
+                    AppLogger.Error($"Failed to subscribe to Control notifications: Status={controlStatus}", component: "BluetoothManager");
+                    CleanupAttempt(device);
+                    ConnectionStatusChanged?.Invoke(false, "订阅控制通知失败");
                     return false;
                 }
             }
@@ -261,24 +278,6 @@ public sealed class WinRtBluetoothManager : IDisposable
             byte[] getCaps = ATVVProtocol.BuildGetCapabilities();
             var buffer = CryptographicBuffer.CreateFromByteArray(getCaps);
             var writeStatus = await tx.WriteValueAsync(buffer, GattWriteOption.WriteWithoutResponse);
-            if (writeStatus != GattCommunicationStatus.Success)
-            {
-                AppLogger.Error($"Failed to write ATVV GetCapabilities command: Status={writeStatus}", component: "BluetoothManager");
-                CleanupAttempt(device);
-                ConnectionStatusChanged?.Invoke(false, "下发能力协商命令失败");
-                return false;
-            }
-
-            AppLogger.Info("ATVV GetCapabilities sent, awaiting remote response...", "BluetoothManager");
-            var completedTask = await Task.WhenAny(_capabilitiesTcs.Task, Task.Delay(5000));
-            if (completedTask != _capabilitiesTcs.Task || !await _capabilitiesTcs.Task)
-            {
-                AppLogger.Warn("ATVV capabilities negotiation timed out or failed 16kHz validation", "BluetoothManager");
-                CleanupAttempt(device);
-                ConnectionStatusChanged?.Invoke(false, "能力协商超时或不支持 16kHz 编码");
-                return false;
-            }
-
             lock (_stateLock)
             {
                 if (targetConnGen != _connectionGeneration)
@@ -286,9 +285,37 @@ public sealed class WinRtBluetoothManager : IDisposable
                     device.Dispose();
                     return false;
                 }
+
+                if (writeStatus != GattCommunicationStatus.Success)
+                {
+                    AppLogger.Error($"Failed to write ATVV GetCapabilities command: Status={writeStatus}", component: "BluetoothManager");
+                    CleanupAttempt(device);
+                    ConnectionStatusChanged?.Invoke(false, "下发能力协商命令失败");
+                    return false;
+                }
+            }
+
+            AppLogger.Info("ATVV GetCapabilities sent, awaiting remote response...", "BluetoothManager");
+            var completedTask = await Task.WhenAny(_capabilitiesTcs.Task, Task.Delay(5000));
+            lock (_stateLock)
+            {
+                if (targetConnGen != _connectionGeneration)
+                {
+                    device.Dispose();
+                    return false;
+                }
+
+                if (completedTask != _capabilitiesTcs.Task || !_capabilitiesTcs.Task.Result)
+                {
+                    AppLogger.Warn("ATVV capabilities negotiation timed out or failed 16kHz validation", "BluetoothManager");
+                    CleanupAttempt(device);
+                    ConnectionStatusChanged?.Invoke(false, "能力协商超时或不支持 16kHz 编码");
+                    return false;
+                }
             }
 
             // Retrieve ContainerId for device matching
+            Guid? foundContainerId = null;
             try
             {
                 var devInfo = await global::Windows.Devices.Enumeration.DeviceInformation.CreateFromIdAsync(
@@ -296,14 +323,26 @@ public sealed class WinRtBluetoothManager : IDisposable
                     new[] { "System.Devices.ContainerId" });
                 if (devInfo != null && devInfo.Properties.TryGetValue("System.Devices.ContainerId", out object? cObj) && cObj is Guid guidVal)
                 {
-                    ConnectedDeviceContainerId = guidVal;
+                    foundContainerId = guidVal;
                 }
             }
             catch { }
 
-            if (ConnectedDeviceContainerId == null)
+            if (!foundContainerId.HasValue)
             {
-                ConnectedDeviceContainerId = Input.RawInputReceiver.GetDeviceContainerId(device.DeviceId);
+                foundContainerId = Input.RawInputReceiver.GetDeviceContainerId(device.DeviceId);
+            }
+
+            lock (_stateLock)
+            {
+                if (targetConnGen != _connectionGeneration)
+                {
+                    // Stale connection attempt superseded while querying ContainerId
+                    device.Dispose();
+                    return false;
+                }
+
+                ConnectedDeviceContainerId = foundContainerId;
             }
 
             AppLogger.Info($"Bluetooth remote connected and ready: '{device.Name}', FrameSize={_frameSize}, ContainerId={ConnectedDeviceContainerId}", "BluetoothManager");
@@ -313,7 +352,14 @@ public sealed class WinRtBluetoothManager : IDisposable
         catch (Exception ex)
         {
             AppLogger.Error($"Exception during ConnectAsync for 0x{bluetoothAddress:X12}", ex, "BluetoothManager");
-            CleanupAttempt(null);
+            lock (_stateLock)
+            {
+                if (targetConnGen == _connectionGeneration)
+                {
+                    CleanupAttempt(null);
+                    ConnectionStatusChanged?.Invoke(false, "连接异常: " + ex.Message);
+                }
+            }
             return false;
         }
     }
@@ -382,7 +428,7 @@ public sealed class WinRtBluetoothManager : IDisposable
                 AppLogger.Error($"Failed to send ATVV MicrophoneOpen packet: Status={writeStatus}", component: "BluetoothManager");
                 lock (_stateLock)
                 {
-                    if (currentConnGen == _connectionGeneration && currentSessGen == _sessionGeneration && opId == _activeOpeningOperationId)
+                    if (currentConnGen == _connectionGeneration && currentSessGen == _sessionGeneration)
                     {
                         _audioPlayer.Stop();
                         _sessionState = BluetoothSessionState.Idle;
@@ -396,6 +442,12 @@ public sealed class WinRtBluetoothManager : IDisposable
                 if (currentConnGen != _connectionGeneration || currentSessGen != _sessionGeneration || opId != _activeOpeningOperationId)
                 {
                     AppLogger.Warn("MicrophoneOpen completed but operation was cancelled or superseded", "BluetoothManager");
+                    if (currentConnGen == _connectionGeneration && currentSessGen == _sessionGeneration)
+                    {
+                        _audioPlayer.Stop();
+                        _sessionState = BluetoothSessionState.Idle;
+                        _ = SendClosePacketAsync(_currentSessionId);
+                    }
                     return false;
                 }
 
@@ -405,6 +457,7 @@ public sealed class WinRtBluetoothManager : IDisposable
                     _ = SendClosePacketAsync(_currentSessionId);
                     _audioPlayer.Stop();
                     _sessionState = BluetoothSessionState.Idle;
+                    _cancelOpenPending = false;
                     return false;
                 }
 
@@ -422,7 +475,7 @@ public sealed class WinRtBluetoothManager : IDisposable
             AppLogger.Error("Exception while opening microphone", ex, "BluetoothManager");
             lock (_stateLock)
             {
-                if (currentConnGen == _connectionGeneration && currentSessGen == _sessionGeneration && opId == _activeOpeningOperationId)
+                if (currentConnGen == _connectionGeneration && currentSessGen == _sessionGeneration)
                 {
                     _audioPlayer.Stop();
                     _sessionState = BluetoothSessionState.Idle;
@@ -441,9 +494,13 @@ public sealed class WinRtBluetoothManager : IDisposable
         {
             if (_sessionState == BluetoothSessionState.Opening)
             {
-                AppLogger.Info("StopVoiceSession requested during Opening, setting cancel pending", "BluetoothManager");
+                AppLogger.Info("StopVoiceSession requested during Opening, cancelling opening session immediately", "BluetoothManager");
+                _sessionGeneration++;
                 _cancelOpenPending = true;
                 _activeOpeningOperationId++;
+                _audioPlayer.Stop();
+                _sessionState = BluetoothSessionState.Idle;
+                _ = SendClosePacketAsync(_currentSessionId);
                 return true;
             }
 

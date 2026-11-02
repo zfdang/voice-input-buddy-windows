@@ -150,49 +150,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             ?? ActiveOnboardingVm?.SelectedDevice?.ContainerId
             ?? _configService.Current.Devices.FirstOrDefault(d => d.Id == _configService.Current.SelectedDeviceId)?.ContainerId;
 
-        Guid? deviceContainerId = RawInputReceiver.GetDeviceContainerId(devicePath);
-
-        if (targetContainerId.HasValue)
-        {
-            if (deviceContainerId.HasValue)
-            {
-                // Strict check: if both have Container ID, they MUST match!
-                return deviceContainerId.Value == targetContainerId.Value;
-            }
-            // Incoming device has no Container ID, but target device DOES have Container ID.
-            if (RawInputReceiver.GetHidDeviceInfo(hDevice, out uint vid, out _))
-            {
-                if (vid != G9N9NProtocol.VendorId && vid != 0x2717 && vid != 0)
-                {
-                    return false;
-                }
-            }
-        }
-
-        // 2. Query official HID device properties (VID/PID) via RIDI_DEVICEINFO
-        if (RawInputReceiver.GetHidDeviceInfo(hDevice, out uint dVid, out uint dPid))
-        {
-            // Google G9N9N Voice Remote (VID 0x18D1, PID 0x9450)
-            if (dVid == G9N9NProtocol.VendorId && dPid == G9N9NProtocol.ProductId)
-            {
-                return true;
-            }
-
-            // Xiaomi Bluetooth Remote (VID 0x2717)
-            if (dVid == 0x2717)
-            {
-                return true;
-            }
-
-            // If it's a known non-remote USB desktop keyboard or mouse, reject it
-            if (dVid != 0)
-            {
-                return false;
-            }
-        }
-
-        // 3. Fallback when Container ID or VID/PID cannot be queried (e.g. mock test harnesses)
-        return true;
+        return RawInputReceiver.EvaluateDeviceMatch(targetContainerId, hDevice, devicePath);
     }
 
     private void OnRawButtonEvent(IntPtr hDevice, RemoteButton button, bool isDown)

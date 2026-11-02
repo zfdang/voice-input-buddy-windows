@@ -108,12 +108,14 @@ public partial class App : Application
             _mainViewModel.ActiveOnboardingVm = null;
             _mainViewModel.IntegrationsVm.Reload();
             _mainViewModel.MappingVm.LoadMappings();
+            _mainViewModel.UpdateVoiceKeyGuard();
         }
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
         AppLogger.Info($"=== Application Exiting (ExitCode: {e.ApplicationExitCode}) ===", "App");
+        _mainViewModel?.Dispose();
         _bluetoothManager?.Dispose();
         AppLogger.Flush();
         base.OnExit(e);

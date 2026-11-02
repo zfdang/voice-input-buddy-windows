@@ -71,7 +71,7 @@ public class InputToolConfig
 {
     public TargetInputTool Tool { get; set; } = TargetInputTool.WeChatInput;
     public VoiceTriggerMode TriggerMode { get; set; } = VoiceTriggerMode.HoldToTalk;
-    public string Shortcut { get; set; } = "Ctrl+Shift+Alt+V";
+    public string Shortcut { get; set; } = "Ctrl+Win";
     public string PreferredAudioInputDevice { get; set; } = "CABLE Output";
 }
 

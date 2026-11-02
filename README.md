@@ -42,6 +42,8 @@
 
 ## 📚 设计与开发文档
 
+Windows RC003 实机测试中，方向、OK、Home、Menu、TV、电源和语音已有输入处理；返回及音量加减在当前标准输入通道下尚未支持。详细证据及验收边界见 [Windows RC003 实机排查记录](docs/windows-rc003-validation.md)。
+
 相关技术细节与规范已在 `docs/` 目录下完成详细归档：
 
 - 🏛️ [软件架构设计 (Architecture)](docs/architecture.md)：技术栈选型（.NET 10 LTS + WPF 自包含发布）、分层设计与线程并发模型；

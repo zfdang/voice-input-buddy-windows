@@ -4,11 +4,14 @@
     <RootNamespace>VoiceInputBuddy.Tests</RootNamespace>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <UseWPF>true</UseWPF>
   </PropertyGroup>
 
   <ItemGroup>
+    <Using Include="System.IO" />
     <ProjectReference Include="..\VoiceInputBuddy.Core\VoiceInputBuddy.Core.csproj" />
     <ProjectReference Include="..\VoiceInputBuddy.Platform.Windows\VoiceInputBuddy.Platform.Windows.csproj" />
+    <ProjectReference Include="..\VoiceInputBuddy.App\VoiceInputBuddy.App.csproj" />
   </ItemGroup>
 
   <ItemGroup>

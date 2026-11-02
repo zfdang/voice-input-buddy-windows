@@ -16,6 +16,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly ConfigService _configService;
     private readonly WinRtBluetoothManager _bluetoothManager;
     private readonly RawInputReceiver _rawInputReceiver = new();
+    private readonly RemoteVoiceKeyGuard _voiceKeyGuard;
+    private readonly Dictionary<IntPtr, (Guid? Target, bool Accepted)> _deviceAdmissionLog = new();
     private ActiveVoiceSession? _activeVoiceSession;
 
     private System.Threading.Timer? _repeatTimer;
@@ -64,12 +66,16 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         _configService = configService;
         _bluetoothManager = bluetoothManager;
+        _voiceKeyGuard = new RemoteVoiceKeyGuard(() =>
+            _bluetoothManager.SessionState is BluetoothSessionState.Opening or BluetoothSessionState.Streaming);
+        _rawInputReceiver.PhysicalVoiceKeyPressed += _voiceKeyGuard.Arm;
 
         DevicesVm = new DevicesViewModel(_configService, _bluetoothManager);
         MappingVm = new MappingViewModel(_configService);
         IntegrationsVm = new IntegrationsViewModel(_configService);
         EnvironmentVm = new EnvironmentViewModel();
         SettingsVm = new SettingsViewModel(_configService, () => RequestOpenOnboarding?.Invoke());
+        UpdateVoiceKeyGuard();
 
         _rawInputReceiver.DeviceFilter = IsTargetDevice;
 
@@ -79,6 +85,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             ConnectedDeviceName = connected ? name : "未连接设备";
             if (!connected)
             {
+                _voiceKeyGuard.Clear();
                 StopRepeatTimer();
             }
         };
@@ -90,23 +97,28 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         _bluetoothManager.VoiceSessionStarted += () =>
         {
+            IsVoiceActive = true;
+            if (ActiveOnboardingVm is { CurrentStep: not 7 }) return;
+            UpdateVoiceKeyGuard();
             var currentConfig = _configService.Current.InputTool;
             var session = new ActiveVoiceSession(currentConfig.TriggerMode, currentConfig.Shortcut, currentConfig.Tool);
             _activeVoiceSession = session;
-            IsVoiceActive = true;
             AppLogger.Info($"Voice session started: Tool={session.Tool}, Mode={session.TriggerMode}, Shortcut='{session.Shortcut}'", "MainViewModel");
             if (session.TriggerMode == VoiceTriggerMode.HoldToTalk)
             {
-                NativeInputSender.SendShortcutDown(session.Shortcut);
+                bool sent = NativeInputSender.SendShortcutDown(session.Shortcut);
+                AppLogger.Info($"Input tool shortcut down: Success={sent}", "MainViewModel");
             }
             else
             {
-                NativeInputSender.SendShortcutClick(session.Shortcut);
+                bool sent = NativeInputSender.SendShortcutClick(session.Shortcut);
+                AppLogger.Info($"Input tool shortcut click: Success={sent}", "MainViewModel");
             }
         };
 
         _bluetoothManager.VoiceSessionEnded += () =>
         {
+            _voiceKeyGuard.Clear();
             IsVoiceActive = false;
             CurrentAudioLevel = 0f;
             if (_activeVoiceSession is { } session)
@@ -125,6 +137,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
         };
 
         _rawInputReceiver.ButtonEvent += OnRawButtonEvent;
+        _bluetoothManager.VoiceButtonPressed += () =>
+        {
+            App.Current?.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (ActiveOnboardingVm?.CurrentStep == 4)
+                    ActiveOnboardingVm.NotifyButtonPressed(RemoteButton.Voice);
+            }));
+        };
     }
 
     partial void OnActivePageNameChanged(string value)
@@ -137,10 +157,23 @@ public partial class MainViewModel : ObservableObject, IDisposable
         else if (value == "Integrations")
         {
             IntegrationsVm.Reload();
+            UpdateVoiceKeyGuard();
         }
     }
 
-    public void RegisterRawInput(IntPtr hwnd) => _rawInputReceiver.Register(hwnd);
+    public void UpdateVoiceKeyGuard()
+    {
+        string shortcut = _configService.Current.InputTool.Shortcut ?? string.Empty;
+        bool usesF5 = shortcut.Contains("F5", StringComparison.OrdinalIgnoreCase);
+        _voiceKeyGuard.IsSuppressionEnabled = !usesF5;
+        AppLogger.Debug($"VoiceKeyGuard updated: SuppressionEnabled={_voiceKeyGuard.IsSuppressionEnabled} (Shortcut='{shortcut}')", "MainViewModel");
+    }
+
+    public void RegisterRawInput(IntPtr hwnd)
+    {
+        AppLogger.Info($"Remote voice F5 guard installed: {_voiceKeyGuard.Install()}", "MainViewModel");
+        _rawInputReceiver.Register(hwnd);
+    }
     public void ProcessRawInput(IntPtr lParam) => _rawInputReceiver.ProcessMessage(lParam);
 
     private bool IsTargetDevice(IntPtr hDevice, string devicePath)
@@ -150,7 +183,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
             ?? ActiveOnboardingVm?.SelectedDevice?.ContainerId
             ?? _configService.Current.Devices.FirstOrDefault(d => d.Id == _configService.Current.SelectedDeviceId)?.ContainerId;
 
-        return RawInputReceiver.EvaluateDeviceMatch(targetContainerId, hDevice, devicePath);
+        bool accepted = RawInputReceiver.EvaluateDeviceMatch(targetContainerId, hDevice, devicePath);
+        if (!_deviceAdmissionLog.TryGetValue(hDevice, out var previous) ||
+            previous != (targetContainerId, accepted))
+        {
+            _deviceAdmissionLog[hDevice] = (targetContainerId, accepted);
+            AppLogger.Info($"RawInput device admission: Accepted={accepted}, TargetContainer={targetContainerId}, " +
+                $"InputContainer={RawInputReceiver.GetDeviceContainerId(devicePath)}, Path='{devicePath}'", "MainViewModel");
+        }
+        return accepted;
     }
 
     private void OnRawButtonEvent(IntPtr hDevice, RemoteButton button, bool isDown)
@@ -162,7 +203,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
             {
                 ActiveOnboardingVm.NotifyButtonPressed(button);
             }
-            return;
+            if (button != RemoteButton.Voice || ActiveOnboardingVm.CurrentStep is not (5 or 7))
+                return;
         }
 
         if (button == RemoteButton.Voice)
@@ -259,6 +301,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        _voiceKeyGuard.Dispose();
         StopRepeatTimer();
         _rawInputReceiver.Dispose();
     }

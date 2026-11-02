@@ -7,6 +7,27 @@ namespace VoiceInputBuddy.Tests;
 public class AudioDecoderAndProtocolTests
 {
     [Fact]
+    public void WeChatShortcut_ParsesModifierOnlyChord_AndRejectsUnknownTokens()
+    {
+        Assert.True(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.TryParseShortcut(
+            "Ctrl + Win", out var modifiers, out var mainKey));
+        Assert.Equal(new ushort[] { 0xA2, 0x5B }, modifiers);
+        Assert.Equal(0, mainKey);
+        Assert.False(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.TryParseShortcut(
+            "Ctrl+UnknownKey", out _, out _));
+    }
+
+    [Theory]
+    [InlineData(0xC0, 0x29, VoiceInputBuddy.Core.Models.RemoteButton.LiveTv)]
+    [InlineData(0xFF, 0x5E, VoiceInputBuddy.Core.Models.RemoteButton.Power)]
+    [InlineData(0xFF, 0x00, VoiceInputBuddy.Core.Models.RemoteButton.None)]
+    public void RawKeyboard_CapturedXiaomiReports_UseVirtualKeyAndScanCode(
+        ushort virtualKey, ushort scanCode, VoiceInputBuddy.Core.Models.RemoteButton expected)
+    {
+        Assert.Equal(expected, VoiceInputBuddy.Platform.Windows.Input.RawInputReceiver.MapVirtualKeyToRemoteButton(virtualKey, scanCode));
+    }
+
+    [Fact]
     public void AdpcmDecoder_InitialState_DecodesCorrectly()
     {
         var decoder = new ImaAdpcmDecoder();
@@ -106,6 +127,47 @@ public class AudioDecoderAndProtocolTests
             int size = System.Runtime.InteropServices.Marshal.SizeOf<VoiceInputBuddy.Platform.Windows.Input.INPUT>();
             Assert.Equal(40, size);
         }
+    }
+
+    [Theory]
+    [InlineData(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_LWIN, true)]
+    [InlineData(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_RWIN, true)]
+    [InlineData(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_UP, true)]
+    [InlineData(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_DOWN, true)]
+    [InlineData(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_LEFT, true)]
+    [InlineData(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_RIGHT, true)]
+    [InlineData(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_DELETE, true)]
+    [InlineData(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_LCONTROL, false)]
+    [InlineData(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_LSHIFT, false)]
+    [InlineData(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_LMENU, false)]
+    [InlineData(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_F1, false)]
+    [InlineData(0x74, false)] // F5
+    public void NativeInputSender_IsExtendedKey_IdentifiesExtendedKeys(ushort vk, bool expected)
+    {
+        Assert.Equal(expected, VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.IsExtendedKey(vk));
+    }
+
+    [Fact]
+    public void NativeInputSender_CreateKeyInput_SetsExtendedFlagForExtendedKeys()
+    {
+        var winDown = VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.CreateKeyInput(
+            VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_LWIN, false);
+        Assert.Equal(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.KEYEVENTF_EXTENDEDKEY, winDown.u.ki.dwFlags);
+
+        var winUp = VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.CreateKeyInput(
+            VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_LWIN, true);
+        Assert.Equal(
+            VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.KEYEVENTF_KEYUP |
+            VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.KEYEVENTF_EXTENDEDKEY,
+            winUp.u.ki.dwFlags);
+
+        var ctrlDown = VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.CreateKeyInput(
+            VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_LCONTROL, false);
+        Assert.Equal(0u, ctrlDown.u.ki.dwFlags);
+
+        var ctrlUp = VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.CreateKeyInput(
+            VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_LCONTROL, true);
+        Assert.Equal(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.KEYEVENTF_KEYUP, ctrlUp.u.ki.dwFlags);
     }
 
     [Fact]
@@ -396,6 +458,8 @@ public class AudioDecoderAndProtocolTests
             IntPtr.Zero, @"\\?\HID#{00001124-0000-1000-8000-00805f9b34fb}_VID&00022717_PID&0030#..."));
         Assert.True(VoiceInputBuddy.Platform.Windows.Input.RawInputReceiver.IsKnownRemoteDevice(
             IntPtr.Zero, @"\\?\HID#VID_2717&PID_0030#..."));
+        Assert.True(VoiceInputBuddy.Platform.Windows.Input.RawInputReceiver.IsKnownRemoteDevice(
+            IntPtr.Zero, @"\\?\HID#{00001812-0000-1000-8000-00805f9b34fb}_Dev_VID&012717_PID&32b8_REV&00a4_test#..."));
     }
 
     [Fact]
@@ -464,8 +528,10 @@ public class AudioDecoderAndProtocolTests
         Assert.True(VoiceInputBuddy.Platform.Windows.Input.RawInputReceiver.EvaluateDeviceMatch(
             null, (IntPtr)1234, remotePath));
 
-        // Simulated mock unit tests (IntPtr.Zero and empty path) are admitted
-        Assert.True(VoiceInputBuddy.Platform.Windows.Input.RawInputReceiver.EvaluateDeviceMatch(
+        // Synthetic SendInput events must never re-enter the mapping pipeline.
+        Assert.False(VoiceInputBuddy.Platform.Windows.Input.RawInputReceiver.EvaluateDeviceMatch(
             null, IntPtr.Zero, ""));
+        Assert.False(VoiceInputBuddy.Platform.Windows.Input.RawInputReceiver.EvaluateDeviceMatch(
+            targetContainer, IntPtr.Zero, remotePath));
     }
 }

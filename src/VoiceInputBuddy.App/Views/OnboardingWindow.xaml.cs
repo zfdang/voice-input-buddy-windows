@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Input;
 using VoiceInputBuddy.App.ViewModels;
 
 namespace VoiceInputBuddy.App.Views;
@@ -10,6 +11,20 @@ public partial class OnboardingWindow : Window
     {
         InitializeComponent();
         Loaded += OnLoaded;
+    }
+
+    protected override void OnPreviewKeyDown(KeyEventArgs e)
+    {
+        // The remote also produces normal Windows keyboard input. During the
+        // button test, keep arrows and Enter (OK) from navigating or activating controls;
+        // Raw Input still delivers their physical button events independently.
+        if (DataContext is OnboardingViewModel { CurrentStep: 4 } &&
+            e.Key is Key.Up or Key.Down or Key.Left or Key.Right or Key.Return)
+        {
+            e.Handled = true;
+            return;
+        }
+        base.OnPreviewKeyDown(e);
     }
 
     private void OnLoaded(object sender, RoutedEventArgs e)

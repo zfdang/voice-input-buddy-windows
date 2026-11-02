@@ -56,7 +56,7 @@
                     <TextBlock Text="选择并连接您的遥控器" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}" VerticalAlignment="Center"/>
                     <Button Content="🔍 扫描设备" HorizontalAlignment="Right" Padding="10,4" Background="#007ACC" Command="{Binding ToggleScanCommand}"/>
                 </DockPanel>
-                <TextBlock Text="请确保遥控器处于配对状态（如同时按住返回键+主页键闪烁），点击列表中发现的设备完成连接：" Foreground="{StaticResource SecondaryTextBrush}" TextWrapping="Wrap" Margin="0,0,0,14"/>
+                <TextBlock Text="点击“扫描设备”查找已配对及正在广播的遥控器，再点击“连接”建立语音服务。已在 Windows 蓝牙设置中连接的遥控器无需重新配对。" Foreground="{StaticResource SecondaryTextBrush}" TextWrapping="Wrap" Margin="0,0,0,14"/>
 
                 <ScrollViewer Height="180" VerticalScrollBarVisibility="Auto">
                     <ItemsControl ItemsSource="{Binding DiscoveredDevices}">
@@ -76,13 +76,13 @@
                 </ScrollViewer>
 
                 <TextBlock Text="连接状态：" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}" Margin="0,10,0,4"/>
-                <TextBlock Text="{Binding IsDeviceConnected, Converter={x:Null}, FallbackValue='未连接'}" Foreground="#00CC66"/>
+                <TextBlock Text="{Binding DeviceConnectionStatus}" TextWrapping="Wrap" Foreground="#00CC66"/>
             </StackPanel>
 
             <!-- Step 4: Button Test -->
             <StackPanel x:Name="Step4Panel" Visibility="Collapsed">
                 <TextBlock Text="遥控器按键响应测试" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}" Margin="0,0,0,10"/>
-                <TextBlock Text="请在遥控器上按下方向键、OK键或音量键，检查界面是否产生对应的高亮反馈：" Foreground="{StaticResource SecondaryTextBrush}" Margin="0,0,0,16"/>
+                <TextBlock Text="请按方向键、OK 或语音键，确认下方显示对应名称。测试后请用鼠标点击“下一步”。部分小米遥控器的返回和音量键暂不支持。" TextWrapping="Wrap" Foreground="{StaticResource SecondaryTextBrush}" Margin="0,0,0,16"/>
                 <Border Background="{StaticResource CardBackgroundBrush}" Padding="20" CornerRadius="6" HorizontalAlignment="Left" Width="300">
                     <TextBlock Text="{Binding LastPressedButtonName}" FontSize="18" FontWeight="Bold" Foreground="#00CC66" HorizontalAlignment="Center"/>
                 </Border>

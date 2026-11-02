@@ -33,6 +33,8 @@ public sealed class WinRtBluetoothManager : IDisposable
     private readonly object _audioLock = new();
 
     private byte _currentSessionId = 0;
+    private byte? _lastEndedSessionId;
+    private long _lastEndedSessionTimeMs;
     private int _frameSize = 120;
     private BluetoothSessionState _sessionState = BluetoothSessionState.Idle;
     private bool _cancelOpenPending = false;
@@ -51,8 +53,10 @@ public sealed class WinRtBluetoothManager : IDisposable
     public event Action<float>? AudioLevelChanged;
     public event Action? VoiceSessionStarted;
     public event Action? VoiceSessionEnded;
+    public event Action? VoiceButtonPressed;
 
     public bool IsConnected => _connectedDevice != null && _connectedDevice.ConnectionStatus == BluetoothConnectionStatus.Connected;
+    public bool IsReady { get; private set; }
     public bool IsStreaming => _sessionState == BluetoothSessionState.Streaming;
     public BluetoothSessionState SessionState => _sessionState;
     public Guid? ConnectedDeviceContainerId { get; private set; }
@@ -76,6 +80,33 @@ public sealed class WinRtBluetoothManager : IDisposable
         catch (Exception ex)
         {
             AppLogger.Error("Failed to start Bluetooth LE scan", ex, "BluetoothManager");
+        }
+    }
+
+    public async Task DiscoverPairedRemotesAsync()
+    {
+        try
+        {
+            var devices = await global::Windows.Devices.Enumeration.DeviceInformation.FindAllAsync(
+                BluetoothLEDevice.GetDeviceSelectorFromPairingState(true));
+            foreach (var info in devices)
+            {
+                if (!XiaomiProtocol.IsCandidate(info.Name) && !G9N9NProtocol.IsCandidate(info.Name)) continue;
+                using var device = await BluetoothLEDevice.FromIdAsync(info.Id);
+                if (device == null) continue;
+                AppLogger.Info($"Found paired remote: '{info.Name}' (0x{device.BluetoothAddress:X12}), OS status={device.ConnectionStatus}", "BluetoothManager");
+                DeviceDiscovered?.Invoke(new RemoteDevice
+                {
+                    Id = device.BluetoothAddress.ToString("X"),
+                    BluetoothAddress = device.BluetoothAddress,
+                    Name = info.Name,
+                    ModelType = XiaomiProtocol.DetectModelType(info.Name)
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error("Failed to enumerate paired remotes", ex, "BluetoothManager");
         }
     }
 
@@ -320,8 +351,9 @@ public sealed class WinRtBluetoothManager : IDisposable
             {
                 var devInfo = await global::Windows.Devices.Enumeration.DeviceInformation.CreateFromIdAsync(
                     device.DeviceId,
-                    new[] { "System.Devices.ContainerId" });
-                if (devInfo != null && devInfo.Properties.TryGetValue("System.Devices.ContainerId", out object? cObj) && cObj is Guid guidVal)
+                    new[] { "System.Devices.Aep.ContainerId" },
+                    global::Windows.Devices.Enumeration.DeviceInformationKind.AssociationEndpoint);
+                if (devInfo != null && devInfo.Properties.TryGetValue("System.Devices.Aep.ContainerId", out object? cObj) && cObj is Guid guidVal && guidVal != Guid.Empty)
                 {
                     foundContainerId = guidVal;
                 }
@@ -343,6 +375,7 @@ public sealed class WinRtBluetoothManager : IDisposable
                 }
 
                 ConnectedDeviceContainerId = foundContainerId;
+                IsReady = true;
             }
 
             AppLogger.Info($"Bluetooth remote connected and ready: '{device.Name}', FrameSize={_frameSize}, ContainerId={ConnectedDeviceContainerId}", "BluetoothManager");
@@ -401,6 +434,7 @@ public sealed class WinRtBluetoothManager : IDisposable
 
             _sessionState = BluetoothSessionState.Opening;
             _cancelOpenPending = false;
+            _lastEndedSessionId = null;
             _ringBuffer.Clear();
             currentConnGen = _connectionGeneration;
             currentSessGen = ++_sessionGeneration;
@@ -512,6 +546,8 @@ public sealed class WinRtBluetoothManager : IDisposable
 
             _sessionState = BluetoothSessionState.Draining;
             sessionIdToClose = _currentSessionId;
+            _lastEndedSessionId = sessionIdToClose;
+            _lastEndedSessionTimeMs = Environment.TickCount64;
             currentConnGen = _connectionGeneration;
             currentSessGen = _sessionGeneration;
             StopKeepaliveTimer();
@@ -714,15 +750,42 @@ public sealed class WinRtBluetoothManager : IDisposable
                         return;
                     }
 
-                    // If cancelled during Opening, or in Draining, or in Idle: MUST send close!
+                    // Xiaomi remotes can send AudioStart directly, without a HID
+                    // voice key or StartSearch. Adopt that stream instead of closing it.
                     bool wasCancelledOrEnded = false;
+                    bool remoteInitiated = false;
+                    int remoteSessionGen = 0;
                     lock (_stateLock)
                     {
                         if (capturedConnGen != _connectionGeneration) return;
                         _currentSessionId = sessionId;
-                        if (_cancelOpenPending || _sessionState == BluetoothSessionState.Draining || _sessionState == BluetoothSessionState.Idle)
+                        bool isStaleDuplicateSession = _lastEndedSessionId.HasValue &&
+                            _lastEndedSessionId.Value == sessionId &&
+                            (Environment.TickCount64 - _lastEndedSessionTimeMs) < 500;
+
+                        if (_cancelOpenPending || _sessionState == BluetoothSessionState.Draining ||
+                            (_sessionState == BluetoothSessionState.Idle && (!IsReady || isStaleDuplicateSession)))
                         {
                             wasCancelledOrEnded = true;
+                            _lastEndedSessionId = sessionId;
+                            _lastEndedSessionTimeMs = Environment.TickCount64;
+                        }
+                        else if (_sessionState == BluetoothSessionState.Idle)
+                        {
+                            if (!_audioPlayer.Start())
+                            {
+                                wasCancelledOrEnded = true;
+                                AppLogger.Error("Cannot accept remote AudioStart: audio output failed", component: "BluetoothManager");
+                            }
+                            else
+                            {
+                                _lastEndedSessionId = null;
+                                _sessionState = BluetoothSessionState.Opening;
+                                remoteSessionGen = ++_sessionGeneration;
+                                _activeOpeningOperationId++;
+                                _ringBuffer.Clear();
+                                remoteInitiated = true;
+                            }
                         }
                     }
 
@@ -730,6 +793,30 @@ public sealed class WinRtBluetoothManager : IDisposable
                     {
                         AppLogger.Info($"AudioStart received while state={_sessionState}/cancelPending={_cancelOpenPending}, sending close", "BluetoothManager");
                         _ = SendClosePacketAsync(sessionId);
+                    }
+                    else if (remoteInitiated)
+                    {
+                        // Reset without nesting the state and audio locks.
+                        lock (_audioLock)
+                        {
+                            if (capturedConnGen != Volatile.Read(ref _connectionGeneration) ||
+                                remoteSessionGen != Volatile.Read(ref _sessionGeneration)) return;
+                            _audioGeneration++;
+                            _frameAccumulator.Reset();
+                            _decoder.Reset();
+                        }
+                        lock (_stateLock)
+                        {
+                            if (capturedConnGen != _connectionGeneration || remoteSessionGen != _sessionGeneration ||
+                                _cancelOpenPending || _sessionState != BluetoothSessionState.Opening)
+                                return;
+                            _sessionState = BluetoothSessionState.Streaming;
+                            _voiceSessionStartedEmitted = true;
+                            StartKeepaliveTimer();
+                        }
+                        AppLogger.Info($"Accepted remote-initiated voice session {sessionId}. State -> Streaming", "BluetoothManager");
+                        VoiceButtonPressed?.Invoke();
+                        VoiceSessionStarted?.Invoke();
                     }
                 }
                 break;
@@ -777,6 +864,7 @@ public sealed class WinRtBluetoothManager : IDisposable
                 {
                     if (capturedConnGen != _connectionGeneration) return;
                 }
+                VoiceButtonPressed?.Invoke();
                 _ = StartVoiceSessionAsync();
                 break;
 
@@ -785,6 +873,8 @@ public sealed class WinRtBluetoothManager : IDisposable
                 lock (_stateLock)
                 {
                     if (capturedConnGen != _connectionGeneration) return;
+                    if (_sessionState == BluetoothSessionState.Idle) _cancelOpenPending = false;
+                    _lastEndedSessionId = null;
                 }
                 _audioStopTcs?.TrySetResult(true);
                 if (_sessionState == BluetoothSessionState.Streaming || _sessionState == BluetoothSessionState.Opening)
@@ -835,6 +925,8 @@ public sealed class WinRtBluetoothManager : IDisposable
             }
 
             _txCharacteristic = null;
+            IsReady = false;
+            _lastEndedSessionId = null;
             ConnectedDeviceContainerId = null;
         }
 

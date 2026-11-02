@@ -332,7 +332,7 @@ public partial class IntegrationsViewModel : ObservableObject
             SelectedTool = tool;
             ShortcutText = tool switch
             {
-                TargetInputTool.WeChatInput => "Ctrl+Shift+Alt+V",
+                TargetInputTool.WeChatInput => "Ctrl+Win",
                 TargetInputTool.DoubaoInput => "F1",
                 TargetInputTool.WindowsDictation => "Win+H",
                 TargetInputTool.Typeless => "Ctrl+Alt+V",

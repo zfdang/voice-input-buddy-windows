@@ -43,6 +43,9 @@ public partial class OnboardingViewModel : ObservableObject
     private bool _isDeviceConnected = false;
 
     [ObservableProperty]
+    private string _deviceConnectionStatus = "尚未连接语音服务。Windows 显示已配对或已连接后，仍需点击下方设备的“连接”。";
+
+    [ObservableProperty]
     private string _lastPressedButtonName = "尚未检测到按键";
 
     [ObservableProperty]
@@ -84,6 +87,11 @@ public partial class OnboardingViewModel : ObservableObject
         SelectedTool = _config.Current.InputTool.Tool;
         TriggerMode = _config.Current.InputTool.TriggerMode;
         ShortcutText = _config.Current.InputTool.Shortcut;
+        IsDeviceConnected = _bt.IsReady;
+        SelectedDevice = _config.Current.Devices.FirstOrDefault(d => d.Id == _config.Current.SelectedDeviceId);
+        foreach (var device in _config.Current.Devices)
+            DiscoveredDevices.Add(device);
+        if (IsDeviceConnected) DeviceConnectionStatus = "语音服务已就绪，可以继续。";
 
         _bt.DeviceDiscovered += (dev) =>
         {
@@ -99,9 +107,12 @@ public partial class OnboardingViewModel : ObservableObject
         _bt.ConnectionStatusChanged += (connected, name) =>
         {
             IsDeviceConnected = connected;
+            DeviceConnectionStatus = connected ? $"语音服务已就绪：{name}" : $"语音服务未就绪：{name}";
             if (!connected)
             {
+                HasButtonTested = false;
                 HasAudioTested = false;
+                LiveAudioLevel = 0f;
                 _hasVoiceTranscriptionSessionOccurred = false;
             }
         };
@@ -109,7 +120,7 @@ public partial class OnboardingViewModel : ObservableObject
         _bt.AudioLevelChanged += (level) =>
         {
             LiveAudioLevel = level;
-            if (level > 0.05f)
+            if (CurrentStep == 5 && level > 0.05f)
             {
                 HasAudioTested = true;
             }
@@ -117,6 +128,7 @@ public partial class OnboardingViewModel : ObservableObject
 
         _bt.VoiceSessionEnded += () =>
         {
+            LiveAudioLevel = 0f;
             if (CurrentStep == 7)
             {
                 _hasVoiceTranscriptionSessionOccurred = true;
@@ -161,6 +173,7 @@ public partial class OnboardingViewModel : ObservableObject
         if (IsScanning)
         {
             _bt.StartScanning();
+            _ = _bt.DiscoverPairedRemotesAsync();
         }
         else
         {
@@ -172,6 +185,10 @@ public partial class OnboardingViewModel : ObservableObject
     public async Task ConnectDeviceAsync(RemoteDevice? device)
     {
         if (device == null) return;
+        ValidationError = string.Empty;
+        IsDeviceConnected = false;
+        DeviceConnectionStatus = $"正在连接 {device.Name} 并协商语音服务，请稍候……";
+        AppLogger.Info($"Wizard connect requested: '{device.Name}' (0x{device.BluetoothAddress:X12})", "OnboardingViewModel");
         SelectedDevice = device;
         bool ok = await _bt.ConnectAsync(device.BluetoothAddress);
         if (ok)
@@ -190,12 +207,28 @@ public partial class OnboardingViewModel : ObservableObject
             }
             _config.Save();
         }
+        else
+        {
+            ValidationError = DeviceConnectionStatus;
+            AppLogger.Warn($"Wizard connection failed: {DeviceConnectionStatus}", "OnboardingViewModel");
+        }
     }
 
     public void NotifyButtonPressed(RemoteButton button)
     {
+        if (CurrentStep != 4 || button == RemoteButton.None) return;
         LastPressedButtonName = $"已按下: {button}";
         HasButtonTested = true;
+    }
+
+    partial void OnCurrentStepChanged(int value)
+    {
+        if (value == 4)
+        {
+            HasButtonTested = false;
+            LastPressedButtonName = "尚未检测到按键";
+        }
+        if (value == 5) HasAudioTested = false;
     }
 
     [RelayCommand]
@@ -206,7 +239,7 @@ public partial class OnboardingViewModel : ObservableObject
             SelectedTool = tool;
             ShortcutText = tool switch
             {
-                TargetInputTool.WeChatInput => "Ctrl+Shift+Alt+V",
+                TargetInputTool.WeChatInput => "Ctrl+Win",
                 TargetInputTool.DoubaoInput => "F1",
                 TargetInputTool.WindowsDictation => "Win+H",
                 TargetInputTool.Typeless => "Ctrl+Alt+V",
@@ -247,7 +280,8 @@ public partial class OnboardingViewModel : ObservableObject
             case 3: // Device Pairing
                 if (!IsDeviceConnected)
                 {
-                    ValidationError = "请先扫描并成功连接一只遥控器后再继续。";
+                    ValidationError = "请先点击设备的“连接”，等待语音服务就绪。Windows 蓝牙连接状态不能代替应用内语音服务连接。";
+                    AppLogger.Warn($"Step 3 blocked: IsDeviceConnected={IsDeviceConnected}, ManagerReady={_bt.IsReady}, Status={DeviceConnectionStatus}", "OnboardingViewModel");
                     return;
                 }
                 break;

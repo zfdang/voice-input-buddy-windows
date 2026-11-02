@@ -50,14 +50,18 @@ public struct HARDWAREINPUT
 public static class NativeInputSender
 {
     public const uint INPUT_KEYBOARD = 1;
+    public const uint KEYEVENTF_EXTENDEDKEY = 0x0001;
     public const uint KEYEVENTF_KEYUP = 0x0002;
     public const uint KEYEVENTF_UNICODE = 0x0004;
 
     // Virtual-Key codes
     public const ushort VK_LCONTROL = 0xA2;
+    public const ushort VK_RCONTROL = 0xA3;
     public const ushort VK_LSHIFT = 0xA0;
     public const ushort VK_LMENU = 0xA4; // Alt
+    public const ushort VK_RMENU = 0xA5;
     public const ushort VK_LWIN = 0x5B;
+    public const ushort VK_RWIN = 0x5C;
     public const ushort VK_BACK = 0x08;
     public const ushort VK_TAB = 0x09;
     public const ushort VK_RETURN = 0x0D;
@@ -79,22 +83,20 @@ public static class NativeInputSender
     [DllImport("user32.dll", SetLastError = true)]
     public static extern uint SendInput(uint nInputs, [In] INPUT[] pInputs, int cbSize);
 
+    public static bool IsExtendedKey(ushort vk) => vk switch
+    {
+        VK_LWIN or VK_RWIN or 0x5D /* VK_APPS */ => true,
+        VK_RCONTROL or VK_RMENU => true,
+        VK_LEFT or VK_UP or VK_RIGHT or VK_DOWN => true,
+        0x21 /* VK_PRIOR/PageUp */ or 0x22 /* VK_NEXT/PageDown */ or 0x23 /* VK_END */ or 0x24 /* VK_HOME */ or 0x2D /* VK_INSERT */ or VK_DELETE => true,
+        VK_VOLUME_MUTE or VK_VOLUME_DOWN or VK_VOLUME_UP or VK_MEDIA_NEXT_TRACK or VK_MEDIA_PREV_TRACK or VK_MEDIA_PLAY_PAUSE => true,
+        _ => false
+    };
+
     public static bool SendKey(ushort vk, bool isKeyUp)
     {
         var inputs = new INPUT[1];
-        inputs[0] = new INPUT
-        {
-            type = INPUT_KEYBOARD,
-            u = new InputUnion
-            {
-                ki = new KEYBDINPUT
-                {
-                    wVk = vk,
-                    dwFlags = isKeyUp ? KEYEVENTF_KEYUP : 0
-                }
-            }
-        };
-
+        inputs[0] = CreateKeyInput(vk, isKeyUp);
         uint sent = SendInput(1, inputs, Marshal.SizeOf<INPUT>());
         return sent == 1;
     }
@@ -141,9 +143,10 @@ public static class NativeInputSender
             }
             else if (upper.Length == 1 && upper[0] >= 'A' && upper[0] <= 'Z') mainKey = upper[0];
             else if (upper.Length == 1 && upper[0] >= '0' && upper[0] <= '9') mainKey = upper[0];
+            else return false;
         }
 
-        return mainKey != 0;
+        return mainKey != 0 || modifiers.Count > 0;
     }
 
     public static bool SendShortcutDown(string shortcut)
@@ -151,7 +154,7 @@ public static class NativeInputSender
         if (!TryParseShortcut(shortcut, out var modifiers, out ushort mainKey)) return false;
         var inputs = new List<INPUT>();
         foreach (var mod in modifiers) inputs.Add(CreateKeyInput(mod, false));
-        inputs.Add(CreateKeyInput(mainKey, false));
+        if (mainKey != 0) inputs.Add(CreateKeyInput(mainKey, false));
         uint sent = SendInput((uint)inputs.Count, inputs.ToArray(), Marshal.SizeOf<INPUT>());
         return sent == inputs.Count;
     }
@@ -160,7 +163,7 @@ public static class NativeInputSender
     {
         if (!TryParseShortcut(shortcut, out var modifiers, out ushort mainKey)) return false;
         var inputs = new List<INPUT>();
-        inputs.Add(CreateKeyInput(mainKey, true));
+        if (mainKey != 0) inputs.Add(CreateKeyInput(mainKey, true));
         for (int i = modifiers.Count - 1; i >= 0; i--) inputs.Add(CreateKeyInput(modifiers[i], true));
         uint sent = SendInput((uint)inputs.Count, inputs.ToArray(), Marshal.SizeOf<INPUT>());
         return sent == inputs.Count;
@@ -172,8 +175,11 @@ public static class NativeInputSender
 
         var inputs = new List<INPUT>();
         foreach (var mod in modifiers) inputs.Add(CreateKeyInput(mod, false));
-        inputs.Add(CreateKeyInput(mainKey, false));
-        inputs.Add(CreateKeyInput(mainKey, true));
+        if (mainKey != 0)
+        {
+            inputs.Add(CreateKeyInput(mainKey, false));
+            inputs.Add(CreateKeyInput(mainKey, true));
+        }
         for (int i = modifiers.Count - 1; i >= 0; i--) inputs.Add(CreateKeyInput(modifiers[i], true));
 
         uint sent = SendInput((uint)inputs.Count, inputs.ToArray(), Marshal.SizeOf<INPUT>());
@@ -228,16 +234,25 @@ public static class NativeInputSender
         return sent == inputs.Count;
     }
 
-    private static INPUT CreateKeyInput(ushort vk, bool isKeyUp) => new()
+    public static INPUT CreateKeyInput(ushort vk, bool isKeyUp)
     {
-        type = INPUT_KEYBOARD,
-        u = new InputUnion
+        uint flags = isKeyUp ? KEYEVENTF_KEYUP : 0;
+        if (IsExtendedKey(vk))
         {
-            ki = new KEYBDINPUT
-            {
-                wVk = vk,
-                dwFlags = isKeyUp ? KEYEVENTF_KEYUP : 0
-            }
+            flags |= KEYEVENTF_EXTENDEDKEY;
         }
-    };
+
+        return new()
+        {
+            type = INPUT_KEYBOARD,
+            u = new InputUnion
+            {
+                ki = new KEYBDINPUT
+                {
+                    wVk = vk,
+                    dwFlags = flags
+                }
+            }
+        };
+    }
 }

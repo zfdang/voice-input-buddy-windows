@@ -1,3 +1,7 @@
+// Copyright (C) 2026 Voice Input Buddy Contributors
+// SPDX-License-Identifier: GPL-3.0-only
+
+using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using System.Text;
 using VoiceInputBuddy.Core.Diagnostics;
@@ -14,6 +18,8 @@ public sealed class RawInputReceiver : IDisposable
     private const int RIDEV_REMOVE = 0x00000001;
     private const uint RIDI_DEVICENAME = 0x20000007;
     private const uint RIDI_DEVICEINFO = 0x2000000b;
+
+    private static readonly ConcurrentDictionary<string, Guid?> _containerIdCache = new(StringComparer.OrdinalIgnoreCase);
 
     [StructLayout(LayoutKind.Sequential)]
     public struct DEVPROPKEY
@@ -113,7 +119,11 @@ public sealed class RawInputReceiver : IDisposable
     public static Guid? GetDeviceContainerId(string devicePath)
     {
         if (string.IsNullOrEmpty(devicePath)) return null;
+        return _containerIdCache.GetOrAdd(devicePath, ResolveDeviceContainerIdInternal);
+    }
 
+    private static Guid? ResolveDeviceContainerIdInternal(string devicePath)
+    {
         try
         {
             // ContainerId belongs to the device node, not its interface property store.
@@ -155,6 +165,35 @@ public sealed class RawInputReceiver : IDisposable
         }
 
         return null;
+    }
+
+    public void ResetDeviceState(IntPtr? hDevice = null)
+    {
+        var releasesToDispatch = new List<(IntPtr Device, RemoteButton Button)>();
+        lock (_lock)
+        {
+            if (hDevice.HasValue)
+            {
+                if (_devicePressedButtons.TryGetValue(hDevice.Value, out var btns))
+                {
+                    foreach (var btn in btns) releasesToDispatch.Add((hDevice.Value, btn));
+                    btns.Clear();
+                }
+            }
+            else
+            {
+                foreach (var (dev, btns) in _devicePressedButtons)
+                {
+                    foreach (var btn in btns) releasesToDispatch.Add((dev, btn));
+                }
+                _devicePressedButtons.Clear();
+            }
+        }
+
+        foreach (var (dev, btn) in releasesToDispatch)
+        {
+            ButtonEvent?.Invoke(dev, btn, false);
+        }
     }
 
     public static bool GetHidDeviceInfo(IntPtr hDevice, out uint vendorId, out uint productId)
@@ -333,6 +372,10 @@ public sealed class RawInputReceiver : IDisposable
 
             var header = Marshal.PtrToStructure<RAWINPUTHEADER>(buffer);
             IntPtr hDevice = header.hDevice;
+            if (hDevice == IntPtr.Zero)
+            {
+                return; // Discard synthetic SendInput loops immediately
+            }
 
             string devicePath;
             lock (_lock)
@@ -375,6 +418,7 @@ public sealed class RawInputReceiver : IDisposable
                     return;
                 }
 
+                bool dispatchKeyboard = false;
                 lock (_lock)
                 {
                     if (!_devicePressedButtons.TryGetValue(hDevice, out var pressedButtons))
@@ -385,20 +429,19 @@ public sealed class RawInputReceiver : IDisposable
 
                     if (isDown)
                     {
-                        if (pressedButtons.Add(btn))
-                        {
-                            AppLogger.Info($"RawInput Keyboard event: {btn} Down (vkey=0x{vkey:X2}, hDevice=0x{hDevice:X})", "RawInputReceiver");
-                            ButtonEvent?.Invoke(hDevice, btn, true);
-                        }
+                        pressedButtons.Add(btn);
+                        dispatchKeyboard = true;
                     }
                     else
                     {
-                        if (pressedButtons.Remove(btn))
-                        {
-                            AppLogger.Info($"RawInput Keyboard event: {btn} Up (vkey=0x{vkey:X2}, hDevice=0x{hDevice:X})", "RawInputReceiver");
-                            ButtonEvent?.Invoke(hDevice, btn, false);
-                        }
+                        dispatchKeyboard = pressedButtons.Remove(btn);
                     }
+                }
+
+                if (dispatchKeyboard)
+                {
+                    AppLogger.Info($"RawInput Keyboard event: {btn} {(isDown ? "Down" : "Up")} (vkey=0x{vkey:X2}, hDevice=0x{hDevice:X})", "RawInputReceiver");
+                    ButtonEvent?.Invoke(hDevice, btn, isDown);
                 }
                 return;
             }
@@ -420,6 +463,7 @@ public sealed class RawInputReceiver : IDisposable
             Marshal.Copy(IntPtr.Add(buffer, dataOffset), rawBytes, 0, totalRawBytes);
 
             int reportSize = (int)dwSizeHid;
+            var hidEvents = new List<(RemoteButton Button, bool IsDown)>();
 
             lock (_lock)
             {
@@ -464,8 +508,7 @@ public sealed class RawInputReceiver : IDisposable
                     foreach (var btn in released)
                     {
                         pressedButtons.Remove(btn);
-                        AppLogger.Info($"RawInput HID event: {btn} Up (hDevice=0x{hDevice:X})", "RawInputReceiver");
-                        ButtonEvent?.Invoke(hDevice, btn, false);
+                        hidEvents.Add((btn, false));
                     }
 
                     // 2. Newly pressed buttons -> KeyDown (true)
@@ -473,11 +516,16 @@ public sealed class RawInputReceiver : IDisposable
                     {
                         if (pressedButtons.Add(btn))
                         {
-                            AppLogger.Info($"RawInput HID event: {btn} Down (hDevice=0x{hDevice:X})", "RawInputReceiver");
-                            ButtonEvent?.Invoke(hDevice, btn, true);
+                            hidEvents.Add((btn, true));
                         }
                     }
                 }
+            }
+
+            foreach (var (btn, isDown) in hidEvents)
+            {
+                AppLogger.Info($"RawInput HID event: {btn} {(isDown ? "Down" : "Up")} (hDevice=0x{hDevice:X})", "RawInputReceiver");
+                ButtonEvent?.Invoke(hDevice, btn, isDown);
             }
         }
         finally

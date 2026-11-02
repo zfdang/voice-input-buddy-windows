@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Voice Input Buddy Contributors
+// SPDX-License-Identifier: GPL-3.0-only
+
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Windows;
@@ -38,6 +41,9 @@ public partial class MainWindow : Window
 
     [DllImport("user32.dll")]
     private static extern IntPtr LoadIcon(IntPtr hInstance, IntPtr lpIconName);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
 
     [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
     private static extern uint RegisterWindowMessage(string lpString);
@@ -151,6 +157,9 @@ public partial class MainWindow : Window
 
     private void ShowTrayContextMenu()
     {
+        var hwnd = new WindowInteropHelper(this).Handle;
+        SetForegroundWindow(hwnd);
+
         var menu = new ContextMenu
         {
             Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint
@@ -187,6 +196,11 @@ public partial class MainWindow : Window
 
     private void OnWindowClosed(object? sender, EventArgs e)
     {
+        if (DataContext is MainViewModel vm)
+        {
+            vm.PropertyChanged -= OnViewModelPropertyChanged;
+        }
+
         if (_trayIconCreated)
         {
             Shell_NotifyIcon(NIM_DELETE, ref _trayData);

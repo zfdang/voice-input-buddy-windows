@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Voice Input Buddy Contributors
+// SPDX-License-Identifier: GPL-3.0-only
+
 using System.Runtime.InteropServices;
 
 namespace VoiceInputBuddy.Platform.Windows.Input;
@@ -45,23 +48,28 @@ public sealed class RemoteVoiceKeyGuard(Func<bool> voiceSessionActive) : IDispos
 
     private IntPtr OnKeyboard(int code, IntPtr message, IntPtr data)
     {
-        if (code >= 0 && _armed && IsSuppressionEnabled && Marshal.ReadInt32(data) == 0x74)
+        try
         {
-            uint flags = (uint)Marshal.ReadInt32(data, 8);
-            // Let injected cleanup events through. Observe no other keys.
-            if ((flags & 0x10) == 0)
+            if (code >= 0 && _armed && IsSuppressionEnabled && Marshal.ReadInt32(data) == 0x74)
             {
-                if (!voiceSessionActive() && Environment.TickCount64 - _armedAt > 2000)
-                    _armed = false;
-                else
+                uint flags = (uint)Marshal.ReadInt32(data, 8);
+                // Let injected cleanup events through. Observe no other keys.
+                if ((flags & 0x10) == 0)
                 {
-                    // The first down may already have reached another hook.
-                    // Always balance it with the real physical key-up.
-                    if (message.ToInt64() is 0x101 or 0x105) _armed = false;
-                    else return (IntPtr)1;
+                    if (!voiceSessionActive() && Environment.TickCount64 - _armedAt > 2000)
+                        _armed = false;
+                    else
+                    {
+                        // The first down may already have reached another hook.
+                        // Always balance it with the real physical key-up.
+                        if (message.ToInt64() is 0x101 or 0x105) _armed = false;
+                        else return (IntPtr)1;
+                    }
                 }
             }
         }
+        catch { }
+
         return CallNextHookEx(_hook, code, message, data);
     }
 

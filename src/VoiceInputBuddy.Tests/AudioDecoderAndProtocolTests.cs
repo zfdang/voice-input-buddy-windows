@@ -1,4 +1,5 @@
 using VoiceInputBuddy.Core.Audio;
+using VoiceInputBuddy.Core.Bluetooth;
 using VoiceInputBuddy.Core.Protocols;
 using Xunit;
 
@@ -493,16 +494,16 @@ public class AudioDecoderAndProtocolTests
         var stateField = typeof(VoiceInputBuddy.Platform.Windows.Bluetooth.WinRtBluetoothManager)
             .GetField("_sessionState", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
         Assert.NotNull(stateField);
-        stateField.SetValue(manager, VoiceInputBuddy.Platform.Windows.Bluetooth.BluetoothSessionState.Opening);
+        stateField.SetValue(manager, BluetoothSessionState.Opening);
 
-        Assert.Equal(VoiceInputBuddy.Platform.Windows.Bluetooth.BluetoothSessionState.Opening, manager.SessionState);
+        Assert.Equal(BluetoothSessionState.Opening, manager.SessionState);
 
         // User quickly releases voice key while in Opening
         bool stopped = await manager.StopVoiceSessionAsync();
 
         Assert.True(stopped);
         // Session state MUST immediately reset to Idle so it does not get stuck in Opening
-        Assert.Equal(VoiceInputBuddy.Platform.Windows.Bluetooth.BluetoothSessionState.Idle, manager.SessionState);
+        Assert.Equal(BluetoothSessionState.Idle, manager.SessionState);
     }
 
     [Fact]

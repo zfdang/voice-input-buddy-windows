@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Voice Input Buddy Contributors
+// SPDX-License-Identifier: GPL-3.0-only
+
 using System.Runtime.InteropServices;
 using VoiceInputBuddy.Core.Models;
 
@@ -83,6 +86,9 @@ public static class NativeInputSender
     [DllImport("user32.dll", SetLastError = true)]
     public static extern uint SendInput(uint nInputs, [In] INPUT[] pInputs, int cbSize);
 
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern uint MapVirtualKeyW(uint uCode, uint uMapType);
+
     public static bool IsExtendedKey(ushort vk) => vk switch
     {
         VK_LWIN or VK_RWIN or 0x5D /* VK_APPS */ => true,
@@ -123,10 +129,14 @@ public static class NativeInputSender
         foreach (var p in parts)
         {
             string upper = p.ToUpperInvariant();
-            if (upper is "CTRL" or "CONTROL") modifiers.Add(VK_LCONTROL);
-            else if (upper is "SHIFT") modifiers.Add(VK_LSHIFT);
-            else if (upper is "ALT") modifiers.Add(VK_LMENU);
-            else if (upper is "WIN" or "WINDOWS") modifiers.Add(VK_LWIN);
+            if (upper is "CTRL" or "CONTROL" or "LCTRL") modifiers.Add(VK_LCONTROL);
+            else if (upper == "RCTRL") modifiers.Add(VK_RCONTROL);
+            else if (upper is "SHIFT" or "LSHIFT") modifiers.Add(VK_LSHIFT);
+            else if (upper == "RSHIFT") modifiers.Add(0xA1 /* VK_RSHIFT */);
+            else if (upper is "ALT" or "LALT") modifiers.Add(VK_LMENU);
+            else if (upper == "RALT") modifiers.Add(VK_RMENU);
+            else if (upper is "WIN" or "WINDOWS" or "LWIN") modifiers.Add(VK_LWIN);
+            else if (upper == "RWIN") modifiers.Add(VK_RWIN);
             else if (upper is "ENTER" or "RETURN") mainKey = VK_RETURN;
             else if (upper is "ESC" or "ESCAPE") mainKey = VK_ESCAPE;
             else if (upper == "TAB") mainKey = VK_TAB;
@@ -250,6 +260,7 @@ public static class NativeInputSender
                 ki = new KEYBDINPUT
                 {
                     wVk = vk,
+                    wScan = (ushort)MapVirtualKeyW(vk, 0),
                     dwFlags = flags
                 }
             }

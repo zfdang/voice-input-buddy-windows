@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Voice Input Buddy Contributors
+// SPDX-License-Identifier: GPL-3.0-only
+
 using System.Diagnostics;
 using System.Text;
 
@@ -23,6 +26,7 @@ public static class AppLogger
     private static string _logFilePath = string.Empty;
     private static long _maxFileSizeBytes = 5 * 1024 * 1024; // 5 MB
     private static int _maxArchiveCount = 3;
+    private static DateTime _lastRotationFailureTime = DateTime.MinValue;
     private static bool _isEnabled = true;
     private static bool _isInitialized = false;
 
@@ -172,7 +176,8 @@ public static class AppLogger
                 if (File.Exists(_logFilePath))
                 {
                     var fileInfo = new FileInfo(_logFilePath);
-                    if (fileInfo.Length >= _maxFileSizeBytes)
+                    if (fileInfo.Length >= _maxFileSizeBytes &&
+                        DateTime.UtcNow - _lastRotationFailureTime > TimeSpan.FromMinutes(1))
                     {
                         RotateLogs();
                     }
@@ -230,7 +235,8 @@ public static class AppLogger
         }
         catch (Exception ex)
         {
-            Trace.WriteLine($"[AppLogger] Failed to rotate logs: {ex.Message}");
+            _lastRotationFailureTime = DateTime.UtcNow;
+            Trace.WriteLine($"[AppLogger] Failed to rotate logs (suppressing retries for 1 min): {ex.Message}");
         }
     }
 

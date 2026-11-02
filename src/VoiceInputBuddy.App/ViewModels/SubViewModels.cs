@@ -1,7 +1,11 @@
+// Copyright (C) 2026 Voice Input Buddy Contributors
+// SPDX-License-Identifier: GPL-3.0-only
+
 using System.Collections.ObjectModel;
 using System.Reflection;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using VoiceInputBuddy.Core.Bluetooth;
 using VoiceInputBuddy.Core.Config;
 using VoiceInputBuddy.Core.Diagnostics;
 using VoiceInputBuddy.Core.Models;
@@ -14,7 +18,7 @@ namespace VoiceInputBuddy.App.ViewModels;
 public partial class DevicesViewModel : ObservableObject
 {
     private readonly ConfigService _config;
-    private readonly WinRtBluetoothManager _bt;
+    private readonly IBluetoothManager _bt;
 
     [ObservableProperty]
     private ObservableCollection<RemoteDevice> _discoveredDevices = new();
@@ -28,7 +32,7 @@ public partial class DevicesViewModel : ObservableObject
     [ObservableProperty]
     private float _deviceGain = 1.0f;
 
-    public DevicesViewModel(ConfigService config, WinRtBluetoothManager bt)
+    public DevicesViewModel(ConfigService config, IBluetoothManager bt)
     {
         _config = config;
         _bt = bt;

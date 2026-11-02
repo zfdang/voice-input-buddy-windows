@@ -1,19 +1,28 @@
+// Copyright (C) 2026 Voice Input Buddy Contributors
+// SPDX-License-Identifier: GPL-3.0-only
+
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using VoiceInputBuddy.Core.Bluetooth;
 using VoiceInputBuddy.Core.Config;
 using VoiceInputBuddy.Core.Diagnostics;
 using VoiceInputBuddy.Core.Models;
 using VoiceInputBuddy.Platform.Windows.Audio;
-using VoiceInputBuddy.Platform.Windows.Bluetooth;
 
 namespace VoiceInputBuddy.App.ViewModels;
 
-public partial class OnboardingViewModel : ObservableObject
+public partial class OnboardingViewModel : ObservableObject, IDisposable
 {
     private readonly ConfigService _config;
-    private readonly WinRtBluetoothManager _bt;
+    private readonly IBluetoothManager _bt;
+
+    private readonly Action<RemoteDevice> _onDeviceDiscovered;
+    private readonly Action<bool, string> _onConnectionChanged;
+    private readonly Action<float> _onAudioLevelChanged;
+    private readonly Action _onVoiceSessionEnded;
 
     [ObservableProperty]
     private int _currentStep = 1;
@@ -79,7 +88,7 @@ public partial class OnboardingViewModel : ObservableObject
 
     public event Action? RequestClose;
 
-    public OnboardingViewModel(ConfigService config, WinRtBluetoothManager bt)
+    public OnboardingViewModel(ConfigService config, IBluetoothManager bt)
     {
         _config = config;
         _bt = bt;
@@ -93,7 +102,7 @@ public partial class OnboardingViewModel : ObservableObject
             DiscoveredDevices.Add(device);
         if (IsDeviceConnected) DeviceConnectionStatus = "语音服务已就绪，可以继续。";
 
-        _bt.DeviceDiscovered += (dev) =>
+        _onDeviceDiscovered = (dev) =>
         {
             App.Current?.Dispatcher?.Invoke(() =>
             {
@@ -104,39 +113,88 @@ public partial class OnboardingViewModel : ObservableObject
             });
         };
 
-        _bt.ConnectionStatusChanged += (connected, name) =>
+        _onConnectionChanged = (connected, name) =>
         {
-            IsDeviceConnected = connected;
-            DeviceConnectionStatus = connected ? $"语音服务已就绪：{name}" : $"语音服务未就绪：{name}";
-            if (!connected)
+            void Update()
             {
-                HasButtonTested = false;
-                HasAudioTested = false;
+                IsDeviceConnected = connected;
+                DeviceConnectionStatus = connected ? $"语音服务已就绪：{name}" : $"语音服务未就绪：{name}";
+                if (!connected)
+                {
+                    HasButtonTested = false;
+                    HasAudioTested = false;
+                    LiveAudioLevel = 0f;
+                    _hasVoiceTranscriptionSessionOccurred = false;
+                }
+            }
+
+            if (App.Current?.Dispatcher != null && !App.Current.Dispatcher.CheckAccess())
+            {
+                App.Current.Dispatcher.BeginInvoke(Update);
+            }
+            else
+            {
+                Update();
+            }
+        };
+
+        _onAudioLevelChanged = (level) =>
+        {
+            void Update()
+            {
+                LiveAudioLevel = level;
+                if (CurrentStep == 5 && level > 0.05f)
+                {
+                    HasAudioTested = true;
+                }
+            }
+
+            if (App.Current?.Dispatcher != null && !App.Current.Dispatcher.CheckAccess())
+            {
+                App.Current.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Render, Update);
+            }
+            else
+            {
+                Update();
+            }
+        };
+
+        _onVoiceSessionEnded = () =>
+        {
+            void Update()
+            {
                 LiveAudioLevel = 0f;
-                _hasVoiceTranscriptionSessionOccurred = false;
+                if (CurrentStep == 7)
+                {
+                    _hasVoiceTranscriptionSessionOccurred = true;
+                }
+            }
+
+            if (App.Current?.Dispatcher != null && !App.Current.Dispatcher.CheckAccess())
+            {
+                App.Current.Dispatcher.BeginInvoke(Update);
+            }
+            else
+            {
+                Update();
             }
         };
 
-        _bt.AudioLevelChanged += (level) =>
-        {
-            LiveAudioLevel = level;
-            if (CurrentStep == 5 && level > 0.05f)
-            {
-                HasAudioTested = true;
-            }
-        };
-
-        _bt.VoiceSessionEnded += () =>
-        {
-            LiveAudioLevel = 0f;
-            if (CurrentStep == 7)
-            {
-                _hasVoiceTranscriptionSessionOccurred = true;
-            }
-        };
+        _bt.DeviceDiscovered += _onDeviceDiscovered;
+        _bt.ConnectionStatusChanged += _onConnectionChanged;
+        _bt.AudioLevelChanged += _onAudioLevelChanged;
+        _bt.VoiceSessionEnded += _onVoiceSessionEnded;
 
         RefreshDriverStatus();
         UpdateStepMetadata();
+    }
+
+    public void Dispose()
+    {
+        _bt.DeviceDiscovered -= _onDeviceDiscovered;
+        _bt.ConnectionStatusChanged -= _onConnectionChanged;
+        _bt.AudioLevelChanged -= _onAudioLevelChanged;
+        _bt.VoiceSessionEnded -= _onVoiceSessionEnded;
     }
 
     [RelayCommand]

@@ -28,9 +28,10 @@ public class OnboardingConnectionTests
         vm.NextStep();
 
         Assert.Equal(6, vm.CurrentStep);
-        Assert.Equal("Ctrl+Win", config.Current.InputTool.Shortcut);
+        Assert.Equal("Ctrl+F5", config.Current.InputTool.Shortcut);
         Assert.Contains("快捷键", vm.ValidationError);
         vm.ApplyPreset("WeChatInput");
+        Assert.Equal("Ctrl+F5", vm.ShortcutText);
         vm.NextStep();
         Assert.Equal(7, vm.CurrentStep);
         Assert.Empty(vm.ValidationError);

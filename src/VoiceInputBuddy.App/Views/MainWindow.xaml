@@ -7,6 +7,7 @@
         xmlns:pages="clr-namespace:VoiceInputBuddy.App.Views.Pages"
         mc:Ignorable="d"
         Title="{Binding CurrentTitle}" Height="720" Width="1020"
+        Icon="/Resources/app.ico"
         MinHeight="620" MinWidth="880"
         WindowStartupLocation="CenterScreen"
         Background="{StaticResource PrimaryBackgroundBrush}">

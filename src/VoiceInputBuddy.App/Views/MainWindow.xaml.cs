@@ -40,9 +40,6 @@ public partial class MainWindow : Window
     private static extern bool Shell_NotifyIcon(uint dwMessage, ref NOTIFYICONDATA lpData);
 
     [DllImport("user32.dll")]
-    private static extern IntPtr LoadIcon(IntPtr hInstance, IntPtr lpIconName);
-
-    [DllImport("user32.dll")]
     private static extern bool SetForegroundWindow(IntPtr hWnd);
 
     [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
@@ -64,6 +61,7 @@ public partial class MainWindow : Window
     private const int WM_RBUTTONUP = 0x0205;
 
     private NOTIFYICONDATA _trayData;
+    private System.Drawing.Icon? _trayIcon;
     private bool _trayIconCreated = false;
     private uint _wmTaskbarCreated = 0;
     public bool IsExplicitExit { get; set; } = false;
@@ -106,7 +104,15 @@ public partial class MainWindow : Window
         if (_trayIconCreated) return;
         try
         {
-            IntPtr hIcon = LoadIcon(IntPtr.Zero, (IntPtr)32512); // IDI_APPLICATION
+            if (_trayIcon == null)
+            {
+                var resource = Application.GetResourceStream(new Uri("/Resources/app.ico", UriKind.Relative));
+                if (resource == null) return;
+                using (resource.Stream)
+                {
+                    _trayIcon = new System.Drawing.Icon(resource.Stream, 32, 32);
+                }
+            }
             _trayData = new NOTIFYICONDATA
             {
                 cbSize = (uint)Marshal.SizeOf<NOTIFYICONDATA>(),
@@ -114,7 +120,7 @@ public partial class MainWindow : Window
                 uID = 1001,
                 uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP,
                 uCallbackMessage = (uint)WM_TRAYICON,
-                hIcon = hIcon,
+                hIcon = _trayIcon.Handle,
                 szTip = "Voice Input Buddy (Windows)"
             };
             _trayIconCreated = Shell_NotifyIcon(NIM_ADD, ref _trayData);
@@ -247,6 +253,8 @@ public partial class MainWindow : Window
             Shell_NotifyIcon(NIM_DELETE, ref _trayData);
             _trayIconCreated = false;
         }
+        _trayIcon?.Dispose();
+        _trayIcon = null;
     }
 
     private void OnLoaded(object sender, RoutedEventArgs e)

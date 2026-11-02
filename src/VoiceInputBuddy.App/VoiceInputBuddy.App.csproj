@@ -4,11 +4,12 @@
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <RootNamespace>VoiceInputBuddy.App</RootNamespace>
     <UseWPF>true</UseWPF>
-    <ApplicationIcon Condition="Exists('Resources\app.ico')">Resources\app.ico</ApplicationIcon>
+    <ApplicationIcon>Resources\app.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 
   <ItemGroup>
+    <Resource Include="Resources\app.ico" />
     <ProjectReference Include="..\VoiceInputBuddy.Core\VoiceInputBuddy.Core.csproj" />
     <ProjectReference Include="..\VoiceInputBuddy.Platform.Windows\VoiceInputBuddy.Platform.Windows.csproj" />
   </ItemGroup>

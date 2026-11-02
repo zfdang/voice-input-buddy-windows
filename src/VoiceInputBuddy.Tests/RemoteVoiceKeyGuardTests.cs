@@ -10,6 +10,25 @@ namespace VoiceInputBuddy.Tests;
 
 public class RemoteVoiceKeyGuardTests
 {
+    [Fact]
+    public void LongVoiceSession_ContinuesToBlockPhysicalF5Repeats()
+    {
+        using var guard = new RemoteVoiceKeyGuard(() => true) { IsSuppressionEnabled = false };
+        guard.BeginShortcutHold("Ctrl+F5");
+        typeof(RemoteVoiceKeyGuard).GetField("_holdStartedAt", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .SetValue(guard, Environment.TickCount64 - 6000);
+        var callback = typeof(RemoteVoiceKeyGuard).GetMethod("OnKeyboard", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        IntPtr packet = Marshal.AllocHGlobal(24);
+        try
+        {
+            for (int i = 0; i < 24; i++) Marshal.WriteByte(packet, i, 0);
+            Marshal.WriteInt32(packet, 0, 0x74);
+            Assert.Equal((IntPtr)1, (IntPtr)callback.Invoke(guard, [0, (IntPtr)0x100, packet])!);
+            Assert.Equal((IntPtr)1, (IntPtr)callback.Invoke(guard, [0, (IntPtr)0x101, packet])!);
+        }
+        finally { Marshal.FreeHGlobal(packet); }
+    }
+
     [Theory]
     [InlineData(0x100, 0, true)]
     [InlineData(0x101, 0x80, true)]

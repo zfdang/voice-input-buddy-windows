@@ -323,7 +323,7 @@ public partial class OnboardingViewModel : ObservableObject, IDisposable
             SelectedTool = tool;
             ShortcutText = tool switch
             {
-                TargetInputTool.WeChatInput => "Ctrl+Win",
+                TargetInputTool.WeChatInput => InputToolConfig.DefaultWeChatShortcut,
                 TargetInputTool.DoubaoInput => "F1",
                 TargetInputTool.WindowsDictation => "Win+H",
                 TargetInputTool.Typeless => "Ctrl+Alt+V",

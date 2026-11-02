@@ -90,7 +90,7 @@ public static class NativeInputSender
     public const ushort VK_MEDIA_PLAY_PAUSE = 0xB3;
 
     public static readonly UIntPtr SyntheticEventMarker = new(0x56494201); // "VIB1"
-    private static readonly System.Collections.Concurrent.ConcurrentBag<ushort> _heldSyntheticKeys = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<ushort, byte> _heldSyntheticKeys = new();
 
     [DllImport("user32.dll", SetLastError = true)]
     public static extern uint SendInput(uint nInputs, [In] INPUT[] pInputs, int cbSize);
@@ -103,16 +103,16 @@ public static class NativeInputSender
 
     public static bool IsKeyPhysicallyDown(ushort vk) => (GetAsyncKeyState(vk) & 0x8000) != 0;
 
-    public static void TrackHeldKey(ushort vk) => _heldSyntheticKeys.Add(vk);
+    public static void TrackHeldKey(ushort vk) => _heldSyntheticKeys.TryAdd(vk, 0);
 
     public static void ReleaseAllHeldSyntheticKeys()
     {
-        var keysToRelease = new HashSet<ushort>();
-        while (_heldSyntheticKeys.TryTake(out var key)) keysToRelease.Add(key);
-        if (keysToRelease.Count == 0) return;
+        var keysToRelease = _heldSyntheticKeys.Keys.ToArray();
+        if (keysToRelease.Length == 0) return;
 
         var inputs = keysToRelease.Select(k => CreateKeyInput(k, isKeyUp: true)).ToArray();
-        SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
+        uint sent = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
+        for (int i = 0; i < sent; i++) _heldSyntheticKeys.TryRemove(keysToRelease[i], out _);
     }
 
     public static bool IsExtendedKey(ushort vk) => vk switch
@@ -202,36 +202,36 @@ public static class NativeInputSender
     {
         if (!TryParseShortcut(shortcut, out var modifiers, out ushort mainKey)) return false;
         var inputs = new List<INPUT>();
-        foreach (var mod in modifiers)
-        {
-            inputs.Add(CreateKeyInput(mod, false));
-            TrackHeldKey(mod);
-        }
+        foreach (var mod in modifiers) inputs.Add(CreateKeyInput(mod, false));
         if (mainKey != 0)
         {
             inputs.Add(CreateKeyInput(mainKey, false));
-            TrackHeldKey(mainKey);
         }
         uint sent = SendInput((uint)inputs.Count, inputs.ToArray(), Marshal.SizeOf<INPUT>());
+        for (int i = 0; i < sent; i++) TrackHeldKey(inputs[i].u.ki.wVk);
+        if (sent != inputs.Count) ReleaseAllHeldSyntheticKeys();
         return sent == inputs.Count;
+    }
+
+    public static INPUT[] CreateShortcutReleaseInputs(string shortcut)
+    {
+        if (!TryParseShortcut(shortcut, out var modifiers, out ushort mainKey)) return [];
+        var inputs = new List<INPUT>();
+        if (mainKey != 0) inputs.Add(CreateKeyInput(mainKey, true));
+        for (int i = modifiers.Count - 1; i >= 0; i--)
+            inputs.Add(CreateKeyInput(modifiers[i], true));
+        return inputs.ToArray();
     }
 
     public static bool SendShortcutUp(string shortcut)
     {
-        if (!TryParseShortcut(shortcut, out var modifiers, out ushort mainKey)) return false;
-        var inputs = new List<INPUT>();
-        if (mainKey != 0) inputs.Add(CreateKeyInput(mainKey, true));
-        // Do not inject KeyUp for modifiers that the user is actively holding down on their physical keyboard
-        for (int i = modifiers.Count - 1; i >= 0; i--)
-        {
-            if (!IsKeyPhysicallyDown(modifiers[i]))
-            {
-                inputs.Add(CreateKeyInput(modifiers[i], true));
-            }
-        }
-        if (inputs.Count == 0) return true;
-        uint sent = SendInput((uint)inputs.Count, inputs.ToArray(), Marshal.SizeOf<INPUT>());
-        return sent == inputs.Count;
+        // GetAsyncKeyState includes injected keys, so it cannot establish that
+        // a modifier is physically held. Balance every key we pressed.
+        var inputs = CreateShortcutReleaseInputs(shortcut);
+        if (inputs.Length == 0) return false;
+        uint sent = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
+        for (int i = 0; i < sent; i++) _heldSyntheticKeys.TryRemove(inputs[i].u.ki.wVk, out _);
+        return sent == inputs.Length;
     }
 
     public static bool SendShortcutClick(string shortcut)

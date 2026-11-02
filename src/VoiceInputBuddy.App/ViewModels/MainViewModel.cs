@@ -72,7 +72,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _configService = configService;
         _bluetoothManager = bluetoothManager;
         _voiceKeyGuard = new RemoteVoiceKeyGuard(() =>
-            _bluetoothManager.SessionState is BluetoothSessionState.Opening or BluetoothSessionState.Streaming);
+            _bluetoothManager.SessionState is BluetoothSessionState.Opening or BluetoothSessionState.Streaming or BluetoothSessionState.Draining);
         _rawInputReceiver.PhysicalVoiceKeyPressed += _voiceKeyGuard.Arm;
 
         DevicesVm = new DevicesViewModel(_configService, _bluetoothManager, () => RequestOpenOnboarding?.Invoke());
@@ -233,7 +233,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public void UpdateVoiceKeyGuard()
     {
         string shortcut = _configService.Current.InputTool.Shortcut ?? string.Empty;
-        _voiceKeyGuard.IsSuppressionEnabled = true;
+        bool usesF5 = NativeInputSender.TryParseShortcut(shortcut, out _, out var key) && key == 0x74;
+        _voiceKeyGuard.IsSuppressionEnabled = !usesF5;
         AppLogger.Debug($"VoiceKeyGuard updated: SuppressionEnabled={_voiceKeyGuard.IsSuppressionEnabled} (Shortcut='{shortcut}')", "MainViewModel");
     }
 

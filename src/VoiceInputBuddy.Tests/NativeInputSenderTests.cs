@@ -8,6 +8,14 @@ namespace VoiceInputBuddy.Tests;
 
 public class NativeInputSenderTests
 {
+    [Fact]
+    public void ShortcutRelease_AlwaysBalancesInjectedModifierAndMainKey()
+    {
+        var inputs = NativeInputSender.CreateShortcutReleaseInputs("Ctrl+F5");
+        Assert.Equal(new ushort[] { 0x74, 0xA2 }, inputs.Select(input => input.u.ki.wVk));
+        Assert.All(inputs, input => Assert.NotEqual(0u, input.u.ki.dwFlags & NativeInputSender.KEYEVENTF_KEYUP));
+    }
+
     [Theory]
     [InlineData("Ctrl+Alt+V", new ushort[] { 0xA2, 0xA4 }, (ushort)'V')]
     [InlineData("RCtrl+RAlt+V", new ushort[] { 0xA3, 0xA5 }, (ushort)'V')]

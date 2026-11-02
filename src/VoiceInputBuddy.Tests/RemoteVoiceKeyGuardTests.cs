@@ -31,4 +31,29 @@ public class RemoteVoiceKeyGuardTests
             Marshal.FreeHGlobal(packet);
         }
     }
+
+    [Fact]
+    public void Guard_WhenSuppressionDisabled_DoesNotArmOrBlockF5()
+    {
+        using var guard = new RemoteVoiceKeyGuard(() => true)
+        {
+            IsSuppressionEnabled = false
+        };
+        guard.Arm();
+        Assert.False((bool)typeof(RemoteVoiceKeyGuard).GetField("_armed", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(guard)!);
+
+        var callback = typeof(RemoteVoiceKeyGuard).GetMethod("OnKeyboard", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        IntPtr packet = Marshal.AllocHGlobal(24);
+        try
+        {
+            for (int i = 0; i < 24; i++) Marshal.WriteByte(packet, i, 0);
+            Marshal.WriteInt32(packet, 0, 0x74);
+            Assert.NotEqual((IntPtr)1, (IntPtr)callback.Invoke(guard, [0, (IntPtr)0x100, packet])!);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(packet);
+        }
+    }
 }

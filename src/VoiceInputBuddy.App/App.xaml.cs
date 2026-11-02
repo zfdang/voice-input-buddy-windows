@@ -108,6 +108,7 @@ public partial class App : Application
             _mainViewModel.ActiveOnboardingVm = null;
             _mainViewModel.IntegrationsVm.Reload();
             _mainViewModel.MappingVm.LoadMappings();
+            _mainViewModel.UpdateVoiceKeyGuard();
         }
     }
 

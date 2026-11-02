@@ -129,6 +129,47 @@ public class AudioDecoderAndProtocolTests
         }
     }
 
+    [Theory]
+    [InlineData(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_LWIN, true)]
+    [InlineData(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_RWIN, true)]
+    [InlineData(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_UP, true)]
+    [InlineData(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_DOWN, true)]
+    [InlineData(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_LEFT, true)]
+    [InlineData(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_RIGHT, true)]
+    [InlineData(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_DELETE, true)]
+    [InlineData(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_LCONTROL, false)]
+    [InlineData(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_LSHIFT, false)]
+    [InlineData(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_LMENU, false)]
+    [InlineData(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_F1, false)]
+    [InlineData(0x74, false)] // F5
+    public void NativeInputSender_IsExtendedKey_IdentifiesExtendedKeys(ushort vk, bool expected)
+    {
+        Assert.Equal(expected, VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.IsExtendedKey(vk));
+    }
+
+    [Fact]
+    public void NativeInputSender_CreateKeyInput_SetsExtendedFlagForExtendedKeys()
+    {
+        var winDown = VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.CreateKeyInput(
+            VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_LWIN, false);
+        Assert.Equal(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.KEYEVENTF_EXTENDEDKEY, winDown.u.ki.dwFlags);
+
+        var winUp = VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.CreateKeyInput(
+            VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_LWIN, true);
+        Assert.Equal(
+            VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.KEYEVENTF_KEYUP |
+            VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.KEYEVENTF_EXTENDEDKEY,
+            winUp.u.ki.dwFlags);
+
+        var ctrlDown = VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.CreateKeyInput(
+            VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_LCONTROL, false);
+        Assert.Equal(0u, ctrlDown.u.ki.dwFlags);
+
+        var ctrlUp = VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.CreateKeyInput(
+            VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.VK_LCONTROL, true);
+        Assert.Equal(VoiceInputBuddy.Platform.Windows.Input.NativeInputSender.KEYEVENTF_KEYUP, ctrlUp.u.ki.dwFlags);
+    }
+
     [Fact]
     public void NativeInputSender_TryParseShortcut_ParsesModifiersAndKey()
     {

@@ -75,6 +75,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         IntegrationsVm = new IntegrationsViewModel(_configService);
         EnvironmentVm = new EnvironmentViewModel();
         SettingsVm = new SettingsViewModel(_configService, () => RequestOpenOnboarding?.Invoke());
+        UpdateVoiceKeyGuard();
 
         _rawInputReceiver.DeviceFilter = IsTargetDevice;
 
@@ -98,6 +99,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         {
             IsVoiceActive = true;
             if (ActiveOnboardingVm is { CurrentStep: not 7 }) return;
+            UpdateVoiceKeyGuard();
             var currentConfig = _configService.Current.InputTool;
             var session = new ActiveVoiceSession(currentConfig.TriggerMode, currentConfig.Shortcut, currentConfig.Tool);
             _activeVoiceSession = session;
@@ -155,7 +157,16 @@ public partial class MainViewModel : ObservableObject, IDisposable
         else if (value == "Integrations")
         {
             IntegrationsVm.Reload();
+            UpdateVoiceKeyGuard();
         }
+    }
+
+    public void UpdateVoiceKeyGuard()
+    {
+        string shortcut = _configService.Current.InputTool.Shortcut ?? string.Empty;
+        bool usesF5 = shortcut.Contains("F5", StringComparison.OrdinalIgnoreCase);
+        _voiceKeyGuard.IsSuppressionEnabled = !usesF5;
+        AppLogger.Debug($"VoiceKeyGuard updated: SuppressionEnabled={_voiceKeyGuard.IsSuppressionEnabled} (Shortcut='{shortcut}')", "MainViewModel");
     }
 
     public void RegisterRawInput(IntPtr hwnd)

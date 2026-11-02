@@ -34,6 +34,7 @@ public sealed class WinRtBluetoothManager : IDisposable
 
     private byte _currentSessionId = 0;
     private byte? _lastEndedSessionId;
+    private long _lastEndedSessionTimeMs;
     private int _frameSize = 120;
     private BluetoothSessionState _sessionState = BluetoothSessionState.Idle;
     private bool _cancelOpenPending = false;
@@ -433,6 +434,7 @@ public sealed class WinRtBluetoothManager : IDisposable
 
             _sessionState = BluetoothSessionState.Opening;
             _cancelOpenPending = false;
+            _lastEndedSessionId = null;
             _ringBuffer.Clear();
             currentConnGen = _connectionGeneration;
             currentSessGen = ++_sessionGeneration;
@@ -545,6 +547,7 @@ public sealed class WinRtBluetoothManager : IDisposable
             _sessionState = BluetoothSessionState.Draining;
             sessionIdToClose = _currentSessionId;
             _lastEndedSessionId = sessionIdToClose;
+            _lastEndedSessionTimeMs = Environment.TickCount64;
             currentConnGen = _connectionGeneration;
             currentSessGen = _sessionGeneration;
             StopKeepaliveTimer();
@@ -756,11 +759,16 @@ public sealed class WinRtBluetoothManager : IDisposable
                     {
                         if (capturedConnGen != _connectionGeneration) return;
                         _currentSessionId = sessionId;
+                        bool isStaleDuplicateSession = _lastEndedSessionId.HasValue &&
+                            _lastEndedSessionId.Value == sessionId &&
+                            (Environment.TickCount64 - _lastEndedSessionTimeMs) < 500;
+
                         if (_cancelOpenPending || _sessionState == BluetoothSessionState.Draining ||
-                            (_sessionState == BluetoothSessionState.Idle && (!IsReady || _lastEndedSessionId == sessionId)))
+                            (_sessionState == BluetoothSessionState.Idle && (!IsReady || isStaleDuplicateSession)))
                         {
                             wasCancelledOrEnded = true;
                             _lastEndedSessionId = sessionId;
+                            _lastEndedSessionTimeMs = Environment.TickCount64;
                         }
                         else if (_sessionState == BluetoothSessionState.Idle)
                         {
@@ -771,6 +779,7 @@ public sealed class WinRtBluetoothManager : IDisposable
                             }
                             else
                             {
+                                _lastEndedSessionId = null;
                                 _sessionState = BluetoothSessionState.Opening;
                                 remoteSessionGen = ++_sessionGeneration;
                                 _activeOpeningOperationId++;
@@ -865,6 +874,7 @@ public sealed class WinRtBluetoothManager : IDisposable
                 {
                     if (capturedConnGen != _connectionGeneration) return;
                     if (_sessionState == BluetoothSessionState.Idle) _cancelOpenPending = false;
+                    _lastEndedSessionId = null;
                 }
                 _audioStopTcs?.TrySetResult(true);
                 if (_sessionState == BluetoothSessionState.Streaming || _sessionState == BluetoothSessionState.Opening)

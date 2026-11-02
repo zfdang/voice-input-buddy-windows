@@ -16,10 +16,10 @@ public partial class OnboardingWindow : Window
     protected override void OnPreviewKeyDown(KeyEventArgs e)
     {
         // The remote also produces normal Windows keyboard input. During the
-        // button test, keep arrows/OK/Back from navigating or closing the wizard;
+        // button test, keep arrows and Enter (OK) from navigating or activating controls;
         // Raw Input still delivers their physical button events independently.
         if (DataContext is OnboardingViewModel { CurrentStep: 4 } &&
-            e.Key is Key.Up or Key.Down or Key.Left or Key.Right or Key.Return or Key.Escape)
+            e.Key is Key.Up or Key.Down or Key.Left or Key.Right or Key.Return)
         {
             e.Handled = true;
             return;

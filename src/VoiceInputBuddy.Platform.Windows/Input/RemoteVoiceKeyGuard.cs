@@ -10,6 +10,8 @@ public sealed class RemoteVoiceKeyGuard(Func<bool> voiceSessionActive) : IDispos
     private volatile bool _armed;
     private long _armedAt;
 
+    public bool IsSuppressionEnabled { get; set; } = true;
+
     [DllImport("user32.dll", SetLastError = true)]
     private static extern IntPtr SetWindowsHookExW(int id, HookProc callback, IntPtr module, uint threadId);
     [DllImport("user32.dll")]
@@ -33,6 +35,7 @@ public sealed class RemoteVoiceKeyGuard(Func<bool> voiceSessionActive) : IDispos
     // Called only after Raw Input has verified the physical remote's identity.
     public void Arm()
     {
+        if (!IsSuppressionEnabled) return;
         _armedAt = Environment.TickCount64;
         _armed = true;
         NativeInputSender.SendKey(0x74, true);
@@ -42,7 +45,7 @@ public sealed class RemoteVoiceKeyGuard(Func<bool> voiceSessionActive) : IDispos
 
     private IntPtr OnKeyboard(int code, IntPtr message, IntPtr data)
     {
-        if (code >= 0 && _armed && Marshal.ReadInt32(data) == 0x74)
+        if (code >= 0 && _armed && IsSuppressionEnabled && Marshal.ReadInt32(data) == 0x74)
         {
             uint flags = (uint)Marshal.ReadInt32(data, 8);
             // Let injected cleanup events through. Observe no other keys.

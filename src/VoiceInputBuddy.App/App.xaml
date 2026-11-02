@@ -12,7 +12,10 @@
         <converters:NullToVisibilityConverter x:Key="NullToVisibilityConverter"/>
         <converters:EqualValueToVisibilityConverter x:Key="EqualValueToVisibilityConverter"/>
         <converters:EqualValueToBoolConverter x:Key="EqualValueToBoolConverter"/>
+        <converters:EqualValueToBrushConverter x:Key="EqualValueToBrushConverter"/>
         <converters:GainToDbTextConverter x:Key="GainToDbTextConverter"/>
+        <converters:BatteryVisibilityConverter x:Key="BatteryVisibilityConverter"/>
+        <converters:EnumToDisplayNameConverter x:Key="EnumToDisplayNameConverter"/>
 
         <!-- Fluent Dark/Light Theme Colors -->
         <SolidColorBrush x:Key="PrimaryBackgroundBrush" Color="#1E1E1E"/>
@@ -47,6 +50,10 @@
                 <Trigger Property="IsMouseOver" Value="True">
                     <Setter Property="Background" Value="#007ACC"/>
                     <Setter Property="BorderBrush" Value="#0098FF"/>
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Opacity" Value="0.4"/>
+                    <Setter Property="Cursor" Value="Arrow"/>
                 </Trigger>
             </Style.Triggers>
         </Style>

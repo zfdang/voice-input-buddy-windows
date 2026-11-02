@@ -57,7 +57,7 @@ public static class G9N9NProtocol
     {
         if (string.IsNullOrWhiteSpace(name)) return false;
         string clean = name.Trim().ToLowerInvariant().Replace("_", " ").Replace("-", " ");
-        return clean.Contains("chromecast") || clean.Contains("g9n9n");
+        return clean.Contains("chromecast") || clean.Contains("g9n9n") || clean.Contains("gy3le") || clean.Contains("google tv");
     }
 
     public static bool TryParseReport1(ReadOnlySpan<byte> data, out List<RemoteButton> buttons)
@@ -255,8 +255,10 @@ public static class XiaomiProtocol
     {
         if (string.IsNullOrWhiteSpace(name)) return RemoteModelType.Unknown;
         string clean = name.Trim().ToLowerInvariant();
+        if (clean.Contains("arn9")) return RemoteModelType.XiaomiARN9;
         if (clean.Contains("rc003") || clean.Contains("2 pro") || clean.Contains("语音遥控器")) return RemoteModelType.XiaomiRC003;
         if (clean.Contains("rc001") || clean.Contains("remote 2") || clean.Contains("遥控器2")) return RemoteModelType.XiaomiRC001;
+        if (clean.Contains("gy3le")) return RemoteModelType.GoogleGY3LE;
         if (G9N9NProtocol.IsCandidate(name)) return RemoteModelType.GoogleG9N9N;
         if (IsCandidate(name)) return RemoteModelType.XiaomiRC003;
         return RemoteModelType.Unknown;

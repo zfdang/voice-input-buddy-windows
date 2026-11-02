@@ -56,7 +56,11 @@
                                     <Border Background="#252A30" BorderBrush="{StaticResource BorderColorBrush}" BorderThickness="1" CornerRadius="6" Padding="12" Margin="0,0,0,14">
                                         <StackPanel>
                                             <TextBlock Text="{Binding Name, FallbackValue='未知遥控器'}" FontWeight="SemiBold" FontSize="15" Foreground="{StaticResource PrimaryTextBrush}" TextWrapping="Wrap"/>
-                                            <TextBlock Text="{Binding ModelType, StringFormat='型号: {0}'}" FontSize="12" Foreground="{StaticResource SecondaryTextBrush}" Margin="0,4,0,0"/>
+                                            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                                <TextBlock Text="{Binding ModelType, StringFormat='型号: {0}'}" FontSize="12" Foreground="{StaticResource SecondaryTextBrush}"/>
+                                                <TextBlock Text="{Binding BatteryLevel, StringFormat=' · 🔋 {0}%'}" FontSize="12" Foreground="#00CC66" Margin="4,0,0,0"
+                                                           Visibility="{Binding BatteryLevel, Converter={StaticResource BatteryVisibilityConverter}}"/>
+                                            </StackPanel>
                                         </StackPanel>
                                     </Border>
 

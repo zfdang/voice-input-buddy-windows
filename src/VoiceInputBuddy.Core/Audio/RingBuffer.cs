@@ -13,10 +13,24 @@ public sealed class AudioRingBuffer
     private readonly object _lock = new();
 
     public int Capacity => _capacity;
-    public int Available => _count;
+    public int Available
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _count;
+            }
+        }
+    }
 
     public AudioRingBuffer(int capacity = 16000 * 2) // default ~2 seconds of 16kHz mono audio
     {
+        if (capacity <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(capacity), "Capacity must be greater than zero.");
+        }
+
         _capacity = capacity;
         _buffer = new short[capacity];
     }

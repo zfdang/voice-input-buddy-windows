@@ -41,14 +41,19 @@
                 <!-- Navigation Buttons -->
                 <StackPanel Margin="10,0">
                     <Button Content="📱  设备连接" HorizontalContentAlignment="Left" Margin="0,3" Padding="16,10"
+                            Background="{Binding ActivePageName, Converter={StaticResource EqualValueToBrushConverter}, ConverterParameter=Devices}"
                             Command="{Binding NavigateCommand}" CommandParameter="Devices"/>
                     <Button Content="⌨️  按键映射" HorizontalContentAlignment="Left" Margin="0,3" Padding="16,10"
+                            Background="{Binding ActivePageName, Converter={StaticResource EqualValueToBrushConverter}, ConverterParameter=Mapping}"
                             Command="{Binding NavigateCommand}" CommandParameter="Mapping"/>
                     <Button Content="🎙️  输入法集成" HorizontalContentAlignment="Left" Margin="0,3" Padding="16,10"
+                            Background="{Binding ActivePageName, Converter={StaticResource EqualValueToBrushConverter}, ConverterParameter=Integrations}"
                             Command="{Binding NavigateCommand}" CommandParameter="Integrations"/>
                     <Button Content="🛡️  环境与驱动" HorizontalContentAlignment="Left" Margin="0,3" Padding="16,10"
+                            Background="{Binding ActivePageName, Converter={StaticResource EqualValueToBrushConverter}, ConverterParameter=Environment}"
                             Command="{Binding NavigateCommand}" CommandParameter="Environment"/>
                     <Button Content="⚙️  通用设置" HorizontalContentAlignment="Left" Margin="0,3" Padding="16,10"
+                            Background="{Binding ActivePageName, Converter={StaticResource EqualValueToBrushConverter}, ConverterParameter=Settings}"
                             Command="{Binding NavigateCommand}" CommandParameter="Settings"/>
                 </StackPanel>
             </DockPanel>

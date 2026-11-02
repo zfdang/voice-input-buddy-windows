@@ -57,6 +57,8 @@ public partial class MainWindow : Window
     private const int WM_USER = 0x0400;
     private const int WM_TRAYICON = WM_USER + 101;
     private const int WM_INPUT = 0x00FF;
+    private const int WM_INPUT_DEVICE_CHANGE = 0x00FE;
+    private const int GIDC_REMOVAL = 2;
     private const int WM_LBUTTONUP = 0x0202;
     private const int WM_LBUTTONDBLCLK = 0x0203;
     private const int WM_RBUTTONUP = 0x0205;
@@ -122,9 +124,22 @@ public partial class MainWindow : Window
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
-        if (msg is 0x0011 /* WM_QUERYENDSESSION */ or 0x0016 /* WM_ENDSESSION */)
+        if (msg == 0x0011 /* WM_QUERYENDSESSION */)
         {
             _isSystemShutdown = true;
+            handled = true;
+            return (IntPtr)1; // Allow OS shutdown
+        }
+        if (msg == 0x0016 /* WM_ENDSESSION */)
+        {
+            if (wParam != IntPtr.Zero)
+            {
+                _isSystemShutdown = true;
+                IsExplicitExit = true;
+                Close();
+                Application.Current?.Shutdown();
+            }
+            handled = true;
             return IntPtr.Zero;
         }
 
@@ -139,6 +154,15 @@ public partial class MainWindow : Window
         if (msg == WM_INPUT && DataContext is MainViewModel vm)
         {
             vm.ProcessRawInput(lParam);
+        }
+        else if (msg == WM_INPUT_DEVICE_CHANGE && DataContext is MainViewModel vmDevice)
+        {
+            if (wParam.ToInt32() == GIDC_REMOVAL)
+            {
+                vmDevice.HandleDeviceRemoval(lParam);
+            }
+            handled = true;
+            return IntPtr.Zero;
         }
         else if (msg == WM_TRAYICON)
         {

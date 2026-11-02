@@ -18,7 +18,9 @@ public static class StartupService
             using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, false);
             var val = key?.GetValue(AppName) as string;
             if (string.IsNullOrEmpty(val)) return false;
-            string? currentExe = Environment.ProcessPath;
+            string? currentExe = Environment.ProcessPath
+                ?? System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName
+                ?? Path.Combine(AppContext.BaseDirectory, "VoiceInputBuddy.exe");
             if (string.IsNullOrEmpty(currentExe)) return true;
 
             string registeredExe = val.Trim();
@@ -29,8 +31,18 @@ public static class StartupService
             }
             else
             {
-                int space = registeredExe.IndexOf(' ');
-                if (space > 0) registeredExe = registeredExe[..space];
+                if (registeredExe.EndsWith(" --minimized", StringComparison.OrdinalIgnoreCase))
+                {
+                    registeredExe = registeredExe[..^12].Trim();
+                }
+                else
+                {
+                    int space = registeredExe.IndexOf(' ');
+                    if (space > 0 && File.Exists(registeredExe[..space]))
+                    {
+                        registeredExe = registeredExe[..space];
+                    }
+                }
             }
 
             try
@@ -58,7 +70,9 @@ public static class StartupService
 
             if (enable)
             {
-                string? exePath = Environment.ProcessPath;
+                string? exePath = Environment.ProcessPath
+                    ?? System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName
+                    ?? Path.Combine(AppContext.BaseDirectory, "VoiceInputBuddy.exe");
                 if (!string.IsNullOrEmpty(exePath))
                 {
                     key.SetValue(AppName, $"\"{exePath}\" --minimized");

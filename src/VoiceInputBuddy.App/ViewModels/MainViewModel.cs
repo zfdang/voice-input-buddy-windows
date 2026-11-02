@@ -78,6 +78,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         DevicesVm = new DevicesViewModel(_configService, _bluetoothManager, () => RequestOpenOnboarding?.Invoke());
         MappingVm = new MappingViewModel(_configService);
         IntegrationsVm = new IntegrationsViewModel(_configService);
+        IntegrationsVm.OnConfigurationSaved = UpdateVoiceKeyGuard;
         EnvironmentVm = new EnvironmentViewModel();
         SettingsVm = new SettingsViewModel(_configService, () => RequestOpenOnboarding?.Invoke());
         UpdateVoiceKeyGuard();
@@ -100,6 +101,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
             ConnectedDeviceName = connected ? name : "未连接设备";
             if (!connected)
             {
+                IsVoiceActive = false;
+                CurrentAudioLevel = 0f;
                 ReleaseHeldVoiceShortcut();
                 _voiceKeyGuard.Clear();
                 StopRepeatTimer();
@@ -230,8 +233,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public void UpdateVoiceKeyGuard()
     {
         string shortcut = _configService.Current.InputTool.Shortcut ?? string.Empty;
-        bool usesF5 = shortcut.Contains("F5", StringComparison.OrdinalIgnoreCase);
-        _voiceKeyGuard.IsSuppressionEnabled = !usesF5;
+        _voiceKeyGuard.IsSuppressionEnabled = true;
         AppLogger.Debug($"VoiceKeyGuard updated: SuppressionEnabled={_voiceKeyGuard.IsSuppressionEnabled} (Shortcut='{shortcut}')", "MainViewModel");
     }
 
@@ -276,16 +278,36 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         if (button == RemoteButton.Voice)
         {
-            if (isDown)
+            var currentMode = _configService.Current.InputTool.TriggerMode;
+            if (currentMode == VoiceTriggerMode.HoldToTalk)
             {
-                _ = _bluetoothManager.StartVoiceSessionAsync();
+                if (isDown)
+                {
+                    _ = _bluetoothManager.StartVoiceSessionAsync();
+                }
+                else
+                {
+                    _ = _bluetoothManager.StopVoiceSessionAsync();
+                }
             }
-            else
+            else // ClickToToggle
             {
-                _ = _bluetoothManager.StopVoiceSessionAsync();
+                if (isDown)
+                {
+                    if (_bluetoothManager.IsStreaming || _bluetoothManager.SessionState == BluetoothSessionState.Opening)
+                    {
+                        _ = _bluetoothManager.StopVoiceSessionAsync();
+                    }
+                    else
+                    {
+                        _ = _bluetoothManager.StartVoiceSessionAsync();
+                    }
+                }
             }
             return;
         }
+
+        if (!MappingVm.CustomMappingEnabled) return;
 
         var selectedDev = _configService.Current.Devices.FirstOrDefault(d => d.Id == _configService.Current.SelectedDeviceId);
         var mapping = selectedDev?.Mappings?.FirstOrDefault(m => m.Button == button);
@@ -380,6 +402,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 NativeInputSender.SendShortcutClick(session.Shortcut);
             }
         }
+        _voiceKeyGuard.EndShortcutHold();
+        NativeInputSender.ReleaseAllHeldSyntheticKeys();
+    }
+
+    public void HandleDeviceRemoval(IntPtr hDevice)
+    {
+        AppLogger.Info($"Device removal notification received for hDevice=0x{hDevice:X}", "MainViewModel");
+        _rawInputReceiver.ResetDeviceState(hDevice);
+        StopRepeatTimer();
     }
 
     private void StopRepeatTimer()
@@ -428,13 +459,17 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public void Dispose()
     {
         _bluetoothManager.ConnectionStatusChanged -= OnConnectionStatusChanged;
+        _bluetoothManager.AudioLevelChanged -= OnAudioLevelChanged;
         _bluetoothManager.VoiceSessionStarted -= OnVoiceSessionStarted;
         _bluetoothManager.VoiceSessionEnded -= OnVoiceSessionEnded;
         _bluetoothManager.VoiceButtonPressed -= OnVoiceButtonPressed;
+        _rawInputReceiver.ButtonEvent -= OnRawButtonEvent;
+        _rawInputReceiver.PhysicalVoiceKeyPressed -= _voiceKeyGuard.Arm;
 
         ReleaseHeldVoiceShortcut();
         _voiceKeyGuard.Dispose();
         StopRepeatTimer();
+        DevicesVm.Dispose();
         _rawInputReceiver.Dispose();
     }
 }

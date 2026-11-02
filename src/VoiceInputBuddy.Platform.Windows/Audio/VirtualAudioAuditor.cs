@@ -38,9 +38,13 @@ public static class VirtualAudioAuditor
             }
 
             // Real WASAPI test open
-            var waveFormat = new WaveFormat(16000, 16, 1);
             using var testOut = new WasapiOut(cableInput, AudioClientShareMode.Shared, useEventSync: true, latency: 20);
-            var dummyProvider = new BufferedWaveProvider(waveFormat);
+            IWaveProvider dummyProvider = new BufferedWaveProvider(new WaveFormat(16000, 16, 1));
+            var mixFormat = cableInput.AudioClient.MixFormat;
+            if (mixFormat.SampleRate != 16000 || mixFormat.Channels != 1 || mixFormat.BitsPerSample != 16)
+            {
+                dummyProvider = new MediaFoundationResampler(dummyProvider, mixFormat);
+            }
             testOut.Init(dummyProvider);
             AppLogger.Info("VB-CABLE audit result: Ready (WASAPI test open succeeded)", "VirtualAudioAuditor");
             return DriverReadinessStatus.Ready;
@@ -109,9 +113,16 @@ public sealed class WasapiAudioPlayer : IDisposable
                     DiscardOnBufferOverflow = true
                 };
 
-                _wasapiOut.Init(_waveProvider);
+                IWaveProvider playbackProvider = _waveProvider;
+                var mixFormat = device.AudioClient.MixFormat;
+                if (mixFormat.SampleRate != _format.SampleRate || mixFormat.Channels != _format.Channels || mixFormat.BitsPerSample != _format.BitsPerSample)
+                {
+                    playbackProvider = new MediaFoundationResampler(_waveProvider, mixFormat);
+                }
+
+                _wasapiOut.Init(playbackProvider);
                 _wasapiOut.Play();
-                AppLogger.Info("WasapiAudioPlayer started playback to CABLE Input (16kHz 16-bit Mono)", "WasapiAudioPlayer");
+                AppLogger.Info($"WasapiAudioPlayer started playback to CABLE Input (Source: 16kHz 16-bit Mono, Native: {mixFormat.SampleRate}Hz {mixFormat.Channels}ch)", "WasapiAudioPlayer");
                 return true;
             }
             catch (Exception ex)

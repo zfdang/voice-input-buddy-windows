@@ -1,6 +1,7 @@
 // Copyright (C) 2026 Voice Input Buddy Contributors
 // SPDX-License-Identifier: GPL-3.0-only
 
+using System.Text;
 using Windows.Devices.Bluetooth;
 using Windows.Devices.Bluetooth.Advertisement;
 using Windows.Devices.Bluetooth.GenericAttributeProfile;
@@ -290,6 +291,38 @@ public sealed class WinRtBluetoothManager : IBluetoothManager
                 _audioCharacteristic = audio;
                 _controlCharacteristic = control;
                 _decoder.LowNibbleFirst = device.Name.Contains("arn9", StringComparison.OrdinalIgnoreCase);
+            }
+
+            try
+            {
+                var disResult = await device.GetGattServicesForUuidAsync(new Guid("0000180A-0000-1000-8000-00805F9B34FB"));
+                if (disResult.Status == GattCommunicationStatus.Success && disResult.Services.Count > 0)
+                {
+                    using var disService = disResult.Services[0];
+                    var charResult = await disService.GetCharacteristicsForUuidAsync(new Guid("00002A24-0000-1000-8000-00805F9B34FB"));
+                    if (charResult.Status == GattCommunicationStatus.Success && charResult.Characteristics.Count > 0)
+                    {
+                        var modelChar = charResult.Characteristics[0];
+                        var readResult = await modelChar.ReadValueAsync();
+                        if (readResult.Status == GattCommunicationStatus.Success && readResult.Value != null)
+                        {
+                            CryptographicBuffer.CopyToByteArray(readResult.Value, out var modelBytes);
+                            string modelStr = Encoding.UTF8.GetString(modelBytes);
+                            if (modelStr.Contains("ARN9", StringComparison.OrdinalIgnoreCase))
+                            {
+                                lock (_stateLock)
+                                {
+                                    _decoder.LowNibbleFirst = true;
+                                }
+                                AppLogger.Info($"Detected ARN9 hardware model string via DIS: '{modelStr.Trim()}' (LowNibbleFirst=true)", "BluetoothManager");
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Debug($"DIS model query exception: {ex.Message}", "BluetoothManager");
             }
 
             // Subscribe notifications
@@ -649,6 +682,9 @@ public sealed class WinRtBluetoothManager : IBluetoothManager
     private void StartKeepaliveTimer()
     {
         StopKeepaliveTimer();
+        // Xiaomi remotes do not support 0x0E MIC_EXTEND and may disconnect; only send to Google candidate remotes
+        if (!G9N9NProtocol.IsCandidate(ConnectedDeviceName)) return;
+
         // Bind keepalive callbacks to this session and do not overlap slow GATT writes.
         int connectionGeneration = _connectionGeneration;
         int sessionGeneration = _sessionGeneration;
@@ -876,6 +912,7 @@ public sealed class WinRtBluetoothManager : IBluetoothManager
                             _audioGeneration++;
                             _frameAccumulator.Reset();
                             _decoder.Reset();
+                            _postprocessor.Reset();
                         }
                         lock (_stateLock)
                         {
@@ -1032,6 +1069,8 @@ public sealed class WinRtBluetoothManager : IBluetoothManager
     public void Dispose()
     {
         StopScanning();
+        _watcher.Received -= OnAdvertisementReceived;
         Disconnect();
+        _audioPlayer.Dispose();
     }
 }

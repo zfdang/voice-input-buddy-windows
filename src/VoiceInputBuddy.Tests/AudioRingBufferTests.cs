@@ -77,4 +77,13 @@ public class AudioRingBufferTests
         Assert.True(level > 0.5f);
         Assert.True(level <= 1.0f);
     }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(-100)]
+    public void AudioRingBuffer_RejectsZeroOrNegativeCapacity(int capacity)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new AudioRingBuffer(capacity));
+    }
 }

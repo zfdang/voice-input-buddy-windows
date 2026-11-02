@@ -110,6 +110,7 @@ public class InputToolConfig
 
 public class AppConfig
 {
+    public int Version { get; set; } = 1;
     public string Language { get; set; } = "system"; // "system", "zh-CN", "en-US"
     public bool LaunchAtStartup { get; set; } = false;
     public bool MinimizeToTrayOnClose { get; set; } = true;

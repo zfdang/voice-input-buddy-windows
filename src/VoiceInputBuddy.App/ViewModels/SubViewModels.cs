@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Reflection;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -15,11 +16,13 @@ using VoiceInputBuddy.Platform.Windows.Services;
 
 namespace VoiceInputBuddy.App.ViewModels;
 
-public partial class DevicesViewModel : ObservableObject
+public partial class DevicesViewModel : ObservableObject, IDisposable
 {
     private readonly ConfigService _config;
     private readonly IBluetoothManager _bt;
     private readonly Action? _openOnboarding;
+    private readonly Action<RemoteDevice> _onDeviceDiscovered;
+    private readonly Action<bool, string> _onConnectionChanged;
 
     [ObservableProperty]
     private ObservableCollection<RemoteDevice> _discoveredDevices = new();
@@ -62,6 +65,7 @@ public partial class DevicesViewModel : ObservableObject
 
         foreach (var dev in _config.Current.Devices)
         {
+            dev.PropertyChanged += OnDevicePropertyChanged;
             DiscoveredDevices.Add(dev);
         }
 
@@ -71,13 +75,14 @@ public partial class DevicesViewModel : ObservableObject
             _bt.CurrentGain = _selectedDevice.Gain;
         }
 
-        _bt.DeviceDiscovered += (dev) =>
+        _onDeviceDiscovered = (dev) =>
         {
             App.Current?.Dispatcher?.BeginInvoke(() =>
             {
                 var existing = DiscoveredDevices.FirstOrDefault(d => d.BluetoothAddress == dev.BluetoothAddress);
                 if (existing == null)
                 {
+                    dev.PropertyChanged += OnDevicePropertyChanged;
                     DiscoveredDevices.Add(dev);
                 }
                 else
@@ -87,8 +92,9 @@ public partial class DevicesViewModel : ObservableObject
                 }
             });
         };
+        _bt.DeviceDiscovered += _onDeviceDiscovered;
 
-        _bt.ConnectionStatusChanged += (connected, name) =>
+        _onConnectionChanged = (connected, name) =>
         {
             App.Current?.Dispatcher?.BeginInvoke(() =>
             {
@@ -100,6 +106,29 @@ public partial class DevicesViewModel : ObservableObject
                 }
             });
         };
+        _bt.ConnectionStatusChanged += _onConnectionChanged;
+    }
+
+    private void OnDevicePropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(RemoteDevice.Gain) && sender is RemoteDevice dev)
+        {
+            if (dev.Id == _config.Current.SelectedDeviceId || dev.BluetoothAddress == SelectedDevice?.BluetoothAddress)
+            {
+                _bt.CurrentGain = dev.Gain;
+            }
+            _config.Save();
+        }
+    }
+
+    public void Dispose()
+    {
+        _bt.DeviceDiscovered -= _onDeviceDiscovered;
+        _bt.ConnectionStatusChanged -= _onConnectionChanged;
+        foreach (var dev in DiscoveredDevices)
+        {
+            dev.PropertyChanged -= OnDevicePropertyChanged;
+        }
     }
 
     [RelayCommand]
@@ -528,11 +557,14 @@ public partial class IntegrationsViewModel : ObservableObject
     [ObservableProperty]
     private VoiceTriggerMode _triggerMode;
 
+    public Action? OnConfigurationSaved { get; set; }
+
     [ObservableProperty]
     private string _shortcutText = string.Empty;
 
     partial void OnShortcutTextChanged(string value)
     {
+        SaveNoticeVisible = false;
         OnPropertyChanged(nameof(CurrentShortcutDisplay));
     }
 
@@ -660,6 +692,7 @@ public partial class IntegrationsViewModel : ObservableObject
         _config.Current.InputTool.Shortcut = ShortcutText;
         _config.Save();
         SaveNoticeVisible = true;
+        OnConfigurationSaved?.Invoke();
         OnPropertyChanged(nameof(CurrentToolDisplayName));
         OnPropertyChanged(nameof(CurrentShortcutDisplay));
         OnPropertyChanged(nameof(CurrentTriggerModeDisplay));

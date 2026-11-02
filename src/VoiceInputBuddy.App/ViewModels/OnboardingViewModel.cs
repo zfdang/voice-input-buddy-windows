@@ -105,13 +105,13 @@ public partial class OnboardingViewModel : ObservableObject, IDisposable
 
         _onDeviceDiscovered = (dev) =>
         {
-            App.Current?.Dispatcher?.Invoke(() =>
+            App.Current?.Dispatcher?.BeginInvoke(new Action(() =>
             {
                 if (!DiscoveredDevices.Any(d => d.BluetoothAddress == dev.BluetoothAddress))
                 {
                     DiscoveredDevices.Add(dev);
                 }
-            });
+            }));
         };
 
         _onConnectionChanged = (connected, name) =>
@@ -192,6 +192,11 @@ public partial class OnboardingViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        if (IsScanning)
+        {
+            _bt.StopScanning();
+            IsScanning = false;
+        }
         _bt.DeviceDiscovered -= _onDeviceDiscovered;
         _bt.ConnectionStatusChanged -= _onConnectionChanged;
         _bt.AudioLevelChanged -= _onAudioLevelChanged;
@@ -268,17 +273,37 @@ public partial class OnboardingViewModel : ObservableObject, IDisposable
         }
         else
         {
-            ValidationError = DeviceConnectionStatus;
-            AppLogger.Warn($"Wizard connection failed: {DeviceConnectionStatus}", "OnboardingViewModel");
+            DeviceConnectionStatus = $"与 {device.Name} 连接失败。";
+            ValidationError = $"无法与 {device.Name} 建立语音服务。请确保遥控器处于配对状态、电量充足且未被其他设备独占连接。";
+            AppLogger.Warn($"Wizard connection failed: {ValidationError}", "OnboardingViewModel");
         }
     }
 
     public void NotifyButtonPressed(RemoteButton button)
     {
         if (CurrentStep != 4 || button == RemoteButton.None) return;
-        LastPressedButtonName = $"已按下: {button}";
+        LastPressedButtonName = $"已按下: {GetButtonFriendlyName(button)}";
         HasButtonTested = true;
     }
+
+    private static string GetButtonFriendlyName(RemoteButton button) => button switch
+    {
+        RemoteButton.Up => "方向上键",
+        RemoteButton.Down => "方向下键",
+        RemoteButton.Left => "方向左键",
+        RemoteButton.Right => "方向右键",
+        RemoteButton.Ok => "确认键 (OK)",
+        RemoteButton.Back => "返回键",
+        RemoteButton.Home => "主页键 (Home)",
+        RemoteButton.Voice => "语音键",
+        RemoteButton.VolumeUp => "音量加 (+)",
+        RemoteButton.VolumeDown => "音量减 (-)",
+        RemoteButton.Mute => "静音键",
+        RemoteButton.Power => "电源键",
+        RemoteButton.LiveTv => "电视直播键",
+        RemoteButton.Menu => "菜单键",
+        _ => button.ToString()
+    };
 
     partial void OnCurrentStepChanged(int value)
     {
@@ -326,10 +351,18 @@ public partial class OnboardingViewModel : ObservableObject, IDisposable
         return true;
     }
 
+    public string NextButtonText => CurrentStep == TotalSteps ? "完成" : "下一步";
+    public bool CanGoPrevious => CurrentStep > 1;
+
     [RelayCommand]
     public void NextStep()
     {
         ValidationError = string.Empty;
+        if (CurrentStep == 3 && IsScanning)
+        {
+            _bt.StopScanning();
+            IsScanning = false;
+        }
 
         // Validation gates for each step
         switch (CurrentStep)
@@ -449,5 +482,7 @@ public partial class OnboardingViewModel : ObservableObject, IDisposable
             8 => "第 8 步：设置完成与使用说明",
             _ => "设置向导"
         };
+        OnPropertyChanged(nameof(NextButtonText));
+        OnPropertyChanged(nameof(CanGoPrevious));
     }
 }

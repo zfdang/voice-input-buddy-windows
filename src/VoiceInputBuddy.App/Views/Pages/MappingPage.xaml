@@ -146,12 +146,18 @@
                             <StackPanel>
                                 <TextBlock Text="单击动作 (Single Click)" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}" Margin="0,0,0,6"/>
                                 <TextBlock Text="按一下立即触发的动作类型：" FontSize="12" Foreground="{StaticResource SecondaryTextBrush}" Margin="0,0,0,10"/>
-                                <ComboBox ItemsSource="{x:Static vm:MappingItemViewModel.AvailableActions}" SelectedItem="{Binding ClickAction, Mode=TwoWay}" Margin="0,0,0,14"/>
+                                <ComboBox ItemsSource="{x:Static vm:MappingItemViewModel.AvailableActions}" SelectedItem="{Binding ClickAction, Mode=TwoWay}" Margin="0,0,0,14">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Converter={StaticResource EnumToDisplayNameConverter}}"/>
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
 
                                 <!-- Keyboard Shortcut Input -->
                                 <StackPanel Visibility="{Binding TextOrShortcutVisibility}">
                                     <TextBlock Text="目标键盘快捷键：" FontSize="13" Foreground="{StaticResource PrimaryTextBrush}" Margin="0,0,0,6"/>
-                                    <TextBox Text="{Binding ParameterText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                    <TextBox Text="{Binding ParameterText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
                                              Background="#1E1E1E" Foreground="#FFF" Padding="10,7" Margin="0,0,0,6"/>
                                     <TextBlock Text="提示: 支持组合键，如 'Ctrl+Alt+A'、'Enter'、'Escape'、'Up'、'Alt+Tab'、'Win+D' 等。"
                                                FontSize="11" Foreground="{StaticResource SecondaryTextBrush}" Margin="0,0,0,10"/>
@@ -160,7 +166,13 @@
                                 <!-- Media Command Dropdown -->
                                 <StackPanel Visibility="{Binding MediaVisibility}">
                                     <TextBlock Text="系统多媒体控制：" FontSize="13" Foreground="{StaticResource PrimaryTextBrush}" Margin="0,0,0,6"/>
-                                    <ComboBox ItemsSource="{x:Static vm:MappingItemViewModel.AvailableMediaCommands}" SelectedItem="{Binding ClickMedia, Mode=TwoWay}" Margin="0,0,0,10"/>
+                                    <ComboBox ItemsSource="{x:Static vm:MappingItemViewModel.AvailableMediaCommands}" SelectedItem="{Binding ClickMedia, Mode=TwoWay}" Margin="0,0,0,10">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding Converter={StaticResource EnumToDisplayNameConverter}}"/>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
                                 </StackPanel>
                             </StackPanel>
                         </Border>
@@ -170,7 +182,13 @@
                             <StackPanel>
                                 <TextBlock Text="长按动作 (Long Press)" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}" Margin="0,0,0,6"/>
                                 <TextBlock Text="按住遥控器按键不放时的行为方式：" FontSize="12" Foreground="{StaticResource SecondaryTextBrush}" Margin="0,0,0,10"/>
-                                <ComboBox ItemsSource="{x:Static vm:MappingItemViewModel.AvailableLongPressActions}" SelectedItem="{Binding LongPressAction, Mode=TwoWay}" Margin="0,0,0,8"/>
+                                <ComboBox ItemsSource="{x:Static vm:MappingItemViewModel.AvailableLongPressActions}" SelectedItem="{Binding LongPressAction, Mode=TwoWay}" Margin="0,0,0,8">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Converter={StaticResource EnumToDisplayNameConverter}}"/>
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
                                 <TextBlock Text="选择【持续连发】时，按住约 0.4 秒后开始以 100ms 间隔连发单击动作，松开即停。"
                                            FontSize="11" Foreground="{StaticResource SecondaryTextBrush}"/>
                             </StackPanel>

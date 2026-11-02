@@ -140,8 +140,8 @@
                        Visibility="{Binding ValidationError, Converter={StaticResource StringToVisibilityConverter}}"/>
             <Border Padding="0,10,0,0" BorderBrush="{StaticResource BorderColorBrush}" BorderThickness="0,1,0,0">
                 <DockPanel LastChildFill="False">
-                    <Button Content="上一步" DockPanel.Dock="Left" Width="100" Command="{Binding PreviousStepCommand}"/>
-                    <Button Content="下一步" DockPanel.Dock="Right" Width="120" Background="#007ACC" Command="{Binding NextStepCommand}"/>
+                    <Button Content="上一步" DockPanel.Dock="Left" Width="100" Command="{Binding PreviousStepCommand}" IsEnabled="{Binding CanGoPrevious}"/>
+                    <Button Content="{Binding NextButtonText}" DockPanel.Dock="Right" Width="120" Background="#007ACC" Command="{Binding NextStepCommand}"/>
                 </DockPanel>
             </Border>
         </StackPanel>

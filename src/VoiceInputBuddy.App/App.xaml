@@ -8,6 +8,11 @@
         <converters:BoolToBrushConverter x:Key="BoolToBrushConverter"/>
         <converters:StringToVisibilityConverter x:Key="StringToVisibilityConverter"/>
         <converters:BoolToScanTextConverter x:Key="BoolToScanTextConverter"/>
+        <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
+        <converters:NullToVisibilityConverter x:Key="NullToVisibilityConverter"/>
+        <converters:EqualValueToVisibilityConverter x:Key="EqualValueToVisibilityConverter"/>
+        <converters:EqualValueToBoolConverter x:Key="EqualValueToBoolConverter"/>
+        <converters:GainToDbTextConverter x:Key="GainToDbTextConverter"/>
 
         <!-- Fluent Dark/Light Theme Colors -->
         <SolidColorBrush x:Key="PrimaryBackgroundBrush" Color="#1E1E1E"/>

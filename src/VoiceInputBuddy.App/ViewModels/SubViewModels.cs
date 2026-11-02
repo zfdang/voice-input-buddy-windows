@@ -19,6 +19,7 @@ public partial class DevicesViewModel : ObservableObject
 {
     private readonly ConfigService _config;
     private readonly IBluetoothManager _bt;
+    private readonly Action? _openOnboarding;
 
     [ObservableProperty]
     private ObservableCollection<RemoteDevice> _discoveredDevices = new();
@@ -32,10 +33,32 @@ public partial class DevicesViewModel : ObservableObject
     [ObservableProperty]
     private float _deviceGain = 1.0f;
 
-    public DevicesViewModel(ConfigService config, IBluetoothManager bt)
+    public string ConnectedDeviceName => _bt.IsConnected ? _bt.ConnectedDeviceName : "未连接设备";
+    public bool IsConnected => _bt.IsConnected;
+
+    public string VoiceIntegrationSummary
+    {
+        get
+        {
+            var tool = _config.Current.InputTool;
+            string toolName = tool.Tool switch
+            {
+                TargetInputTool.WeChatInput => "微信输入法",
+                TargetInputTool.DoubaoInput => "豆包输入法",
+                TargetInputTool.WindowsDictation => "Windows 听写",
+                TargetInputTool.Typeless => "Typeless",
+                _ => "自定义工具"
+            };
+            string mode = tool.TriggerMode == VoiceTriggerMode.HoldToTalk ? "长按说话" : "点按切换";
+            return $"{toolName} ({mode} · {tool.Shortcut})";
+        }
+    }
+
+    public DevicesViewModel(ConfigService config, IBluetoothManager bt, Action? openOnboarding = null)
     {
         _config = config;
         _bt = bt;
+        _openOnboarding = openOnboarding;
 
         foreach (var dev in _config.Current.Devices)
         {
@@ -46,12 +69,37 @@ public partial class DevicesViewModel : ObservableObject
         {
             App.Current?.Dispatcher?.Invoke(() =>
             {
-                if (!DiscoveredDevices.Any(d => d.BluetoothAddress == dev.BluetoothAddress))
+                var existing = DiscoveredDevices.FirstOrDefault(d => d.BluetoothAddress == dev.BluetoothAddress);
+                if (existing == null)
                 {
                     DiscoveredDevices.Add(dev);
                 }
+                else
+                {
+                    existing.Name = dev.Name;
+                    existing.ModelType = dev.ModelType;
+                }
             });
         };
+
+        _bt.ConnectionStatusChanged += (connected, name) =>
+        {
+            App.Current?.Dispatcher?.Invoke(() =>
+            {
+                OnPropertyChanged(nameof(ConnectedDeviceName));
+                OnPropertyChanged(nameof(IsConnected));
+                foreach (var dev in DiscoveredDevices)
+                {
+                    dev.IsConnected = connected && (dev.Name == name || dev.BluetoothAddress.ToString("X") == _config.Current.SelectedDeviceId);
+                }
+            });
+        };
+    }
+
+    [RelayCommand]
+    public void AddDevice()
+    {
+        _openOnboarding?.Invoke();
     }
 
     [RelayCommand]
@@ -88,7 +136,48 @@ public partial class DevicesViewModel : ObservableObject
                 _config.Current.Devices.Add(device);
             }
             _config.Save();
+            OnPropertyChanged(nameof(ConnectedDeviceName));
+            OnPropertyChanged(nameof(IsConnected));
         }
+    }
+
+    [RelayCommand]
+    public void DisconnectDevice()
+    {
+        _bt.Disconnect();
+        if (SelectedDevice != null)
+        {
+            SelectedDevice.IsConnected = false;
+        }
+        OnPropertyChanged(nameof(ConnectedDeviceName));
+        OnPropertyChanged(nameof(IsConnected));
+    }
+
+    [RelayCommand]
+    public void RemoveDevice(RemoteDevice? device)
+    {
+        if (device == null) return;
+        if (device.BluetoothAddress == SelectedDevice?.BluetoothAddress)
+        {
+            _bt.Disconnect();
+            SelectedDevice = null;
+        }
+        DiscoveredDevices.Remove(device);
+        _config.Current.Devices.RemoveAll(d => d.Id == device.Id);
+        if (_config.Current.SelectedDeviceId == device.Id)
+        {
+            _config.Current.SelectedDeviceId = null;
+        }
+        _config.Save();
+        OnPropertyChanged(nameof(ConnectedDeviceName));
+        OnPropertyChanged(nameof(IsConnected));
+    }
+
+    [RelayCommand]
+    public void SaveGain(RemoteDevice? device)
+    {
+        if (device == null) return;
+        _config.Save();
     }
 
     partial void OnSelectedDeviceChanged(RemoteDevice? value)
@@ -242,9 +331,20 @@ public partial class MappingViewModel : ObservableObject
     [ObservableProperty]
     private MappingItemViewModel? _selectedMapping;
 
-    public string DeviceNote => SelectedDevice?.ModelType is RemoteModelType.XiaomiRC001 or RemoteModelType.XiaomiRC003
-        ? "语音键用于语音输入。本机 RC003 测试中返回及音量键尚未收到事件；其他设备需实测。"
-        : "请选择设备并选择要配置的按键。语音键由输入法集成设置控制。";
+    [ObservableProperty]
+    private bool _isMappingSelectionLocked = true;
+
+    [ObservableProperty]
+    private bool _customMappingEnabled = true;
+
+    [ObservableProperty]
+    private RemoteButton _activeHardwareButton = RemoteButton.None;
+
+    public bool IsG9N9N => SelectedDevice?.ModelType is RemoteModelType.GoogleG9N9N or RemoteModelType.GoogleGY3LE;
+
+    public string DeviceNote => IsG9N9N
+        ? "G9N9N 仅支持 OK＋方向键发送 Enter，单键映射不可用。短按 OK＋任意方向键可发送 Enter。"
+        : "选择实体按键设置单击与长按动作。点击左侧遥控器按键快速定位，修改后自动保存。";
 
     public MappingViewModel(ConfigService config)
     {
@@ -256,7 +356,49 @@ public partial class MappingViewModel : ObservableObject
     partial void OnSelectedDeviceChanged(RemoteDevice? value)
     {
         OnPropertyChanged(nameof(DeviceNote));
+        OnPropertyChanged(nameof(IsG9N9N));
         LoadMappings();
+    }
+
+    [RelayCommand]
+    public void SelectButton(string buttonName)
+    {
+        if (Enum.TryParse<RemoteButton>(buttonName, out var btn))
+        {
+            var match = CurrentMappings.FirstOrDefault(m => m.Button == btn);
+            if (match != null)
+            {
+                SelectedMapping = match;
+            }
+        }
+    }
+
+    [RelayCommand]
+    public void ClearSelectedMapping()
+    {
+        if (SelectedMapping != null)
+        {
+            SelectedMapping.ClickAction = ButtonActionType.None;
+            SelectedMapping.LongPressAction = ButtonActionType.None;
+            SelectedMapping.ParameterText = string.Empty;
+            SelectedMapping.ClickShortcut = string.Empty;
+            SelectedMapping.ClickText = string.Empty;
+            SelectedMapping.ApplyBack();
+            SaveMappings();
+        }
+    }
+
+    [RelayCommand]
+    public void ResetToDefaults()
+    {
+        var selectedDev = SelectedDevice;
+        if (selectedDev != null)
+        {
+            selectedDev.Mappings = RemoteDevice.CreateDefaultMappings(selectedDev.ModelType);
+            _drafts.Remove(selectedDev.Id);
+            _config.Save();
+            LoadMappings();
+        }
     }
 
     public void LoadMappings()
@@ -327,6 +469,40 @@ public partial class IntegrationsViewModel : ObservableObject
     [ObservableProperty]
     private VoiceTriggerMode _triggerMode;
 
+    [ObservableProperty]
+    private string _shortcutText = string.Empty;
+
+    [ObservableProperty]
+    private bool _saveNoticeVisible;
+
+    public string CurrentToolDisplayName => SelectedTool switch
+    {
+        TargetInputTool.WeChatInput => "微信输入法",
+        TargetInputTool.DoubaoInput => "豆包输入法 / 客户端",
+        TargetInputTool.WindowsDictation => "Windows 语音听写 (Win+H)",
+        TargetInputTool.Typeless => "Typeless 智能转写",
+        _ => "自定义快捷键"
+    };
+
+    public string CurrentShortcutDisplay => string.IsNullOrWhiteSpace(ShortcutText) ? "未配置" : ShortcutText;
+
+    public string CurrentTriggerModeDisplay => TriggerMode == VoiceTriggerMode.HoldToTalk ? "按住说话 (Hold to Talk)" : "点按切换 (Click to Toggle)";
+
+    public string VirtualCableStatusDescription
+    {
+        get
+        {
+            var status = VirtualAudioAuditor.AuditCableInputDevice();
+            return status switch
+            {
+                DriverReadinessStatus.Ready => "CABLE Input (VB-Audio Virtual Cable) 驱动已就绪",
+                DriverReadinessStatus.NotInstalled => "未检测到 VB-CABLE 驱动，请前往【环境与驱动】安装",
+                DriverReadinessStatus.RebootRequired => "VB-CABLE 需要重启系统完成初始化",
+                _ => "虚拟音频设备未就绪"
+            };
+        }
+    }
+
     public bool IsHoldToTalk
     {
         get => TriggerMode == VoiceTriggerMode.HoldToTalk;
@@ -337,6 +513,7 @@ public partial class IntegrationsViewModel : ObservableObject
                 TriggerMode = VoiceTriggerMode.HoldToTalk;
                 OnPropertyChanged(nameof(IsHoldToTalk));
                 OnPropertyChanged(nameof(IsClickToToggle));
+                OnPropertyChanged(nameof(CurrentTriggerModeDisplay));
                 Save();
             }
         }
@@ -352,13 +529,11 @@ public partial class IntegrationsViewModel : ObservableObject
                 TriggerMode = VoiceTriggerMode.ClickToToggle;
                 OnPropertyChanged(nameof(IsHoldToTalk));
                 OnPropertyChanged(nameof(IsClickToToggle));
+                OnPropertyChanged(nameof(CurrentTriggerModeDisplay));
                 Save();
             }
         }
     }
-
-    [ObservableProperty]
-    private string _shortcutText = string.Empty;
 
     public IntegrationsViewModel(ConfigService config)
     {
@@ -371,8 +546,13 @@ public partial class IntegrationsViewModel : ObservableObject
         SelectedTool = _config.Current.InputTool.Tool;
         TriggerMode = _config.Current.InputTool.TriggerMode;
         ShortcutText = _config.Current.InputTool.Shortcut;
+        SaveNoticeVisible = false;
         OnPropertyChanged(nameof(IsHoldToTalk));
         OnPropertyChanged(nameof(IsClickToToggle));
+        OnPropertyChanged(nameof(CurrentToolDisplayName));
+        OnPropertyChanged(nameof(CurrentShortcutDisplay));
+        OnPropertyChanged(nameof(CurrentTriggerModeDisplay));
+        OnPropertyChanged(nameof(VirtualCableStatusDescription));
     }
 
     [RelayCommand]
@@ -394,6 +574,9 @@ public partial class IntegrationsViewModel : ObservableObject
                 : VoiceTriggerMode.HoldToTalk;
             OnPropertyChanged(nameof(IsHoldToTalk));
             OnPropertyChanged(nameof(IsClickToToggle));
+            OnPropertyChanged(nameof(CurrentToolDisplayName));
+            OnPropertyChanged(nameof(CurrentShortcutDisplay));
+            OnPropertyChanged(nameof(CurrentTriggerModeDisplay));
             Save();
         }
     }
@@ -402,6 +585,7 @@ public partial class IntegrationsViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(IsHoldToTalk));
         OnPropertyChanged(nameof(IsClickToToggle));
+        OnPropertyChanged(nameof(CurrentTriggerModeDisplay));
     }
 
     [RelayCommand]
@@ -411,6 +595,11 @@ public partial class IntegrationsViewModel : ObservableObject
         _config.Current.InputTool.TriggerMode = TriggerMode;
         _config.Current.InputTool.Shortcut = ShortcutText;
         _config.Save();
+        SaveNoticeVisible = true;
+        OnPropertyChanged(nameof(CurrentToolDisplayName));
+        OnPropertyChanged(nameof(CurrentShortcutDisplay));
+        OnPropertyChanged(nameof(CurrentTriggerModeDisplay));
+        OnPropertyChanged(nameof(VirtualCableStatusDescription));
     }
 }
 

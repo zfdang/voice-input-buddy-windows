@@ -11,6 +11,7 @@ using VoiceInputBuddy.Core.Config;
 using VoiceInputBuddy.Core.Diagnostics;
 using VoiceInputBuddy.Core.Models;
 using VoiceInputBuddy.Platform.Windows.Audio;
+using VoiceInputBuddy.Platform.Windows.Input;
 
 namespace VoiceInputBuddy.App.ViewModels;
 
@@ -310,12 +311,19 @@ public partial class OnboardingViewModel : ObservableObject, IDisposable
         }
     }
 
-    public void SaveToolConfig()
+    public bool SaveToolConfig()
     {
+        if (!NativeInputSender.TryParseShortcut(ShortcutText, out _, out _))
+        {
+            ValidationError = "请输入有效的语音快捷键，例如 Ctrl+Win；快捷键不能为空。";
+            return false;
+        }
+        ValidationError = string.Empty;
         _config.Current.InputTool.Tool = SelectedTool;
         _config.Current.InputTool.TriggerMode = TriggerMode;
         _config.Current.InputTool.Shortcut = ShortcutText;
         _config.Save();
+        return true;
     }
 
     [RelayCommand]
@@ -361,7 +369,7 @@ public partial class OnboardingViewModel : ObservableObject, IDisposable
                 break;
 
             case 6: // IME Tool Configuration
-                SaveToolConfig();
+                if (!SaveToolConfig()) return;
                 break;
 
             case 7: // Live Transcription Verification
@@ -420,7 +428,7 @@ public partial class OnboardingViewModel : ObservableObject, IDisposable
             ValidationError = "遥控器未连接，无法完成设置。";
             return;
         }
-        SaveToolConfig();
+        if (!SaveToolConfig()) return;
         _config.Current.HasCompletedOnboarding = true;
         _config.Save();
         AppLogger.Info("Onboarding wizard completed and configuration saved", "OnboardingViewModel");

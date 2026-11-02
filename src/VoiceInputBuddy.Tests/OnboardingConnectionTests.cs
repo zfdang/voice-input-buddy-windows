@@ -8,6 +8,31 @@ namespace VoiceInputBuddy.Tests;
 
 public class OnboardingConnectionTests
 {
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("Ctrl+Unknown")]
+    public void ToolConfiguration_InvalidShortcut_DoesNotAdvanceOrOverwriteSavedShortcut(string shortcut)
+    {
+        using var manager = new WinRtBluetoothManager();
+        var config = CreateConfig();
+        using var vm = new OnboardingViewModel(config, manager)
+        {
+            CurrentStep = 6,
+            ShortcutText = shortcut
+        };
+
+        vm.NextStep();
+
+        Assert.Equal(6, vm.CurrentStep);
+        Assert.Equal("Ctrl+Win", config.Current.InputTool.Shortcut);
+        Assert.Contains("快捷键", vm.ValidationError);
+        vm.ApplyPreset("WeChatInput");
+        vm.NextStep();
+        Assert.Equal(7, vm.CurrentStep);
+        Assert.Empty(vm.ValidationError);
+    }
+
     [Fact]
     public void ReopeningWizard_WithReadyService_RestoresDeviceAndPassesConnectionStep()
     {

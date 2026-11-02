@@ -639,27 +639,36 @@ public sealed class WinRtBluetoothManager : IBluetoothManager
     private void StartKeepaliveTimer()
     {
         StopKeepaliveTimer();
-        // Periodically send 0x0E MIC_EXTEND every 8 seconds
+        // Bind keepalive callbacks to this session and do not overlap slow GATT writes.
+        int connectionGeneration = _connectionGeneration;
+        int sessionGeneration = _sessionGeneration;
+        int writePending = 0;
         _keepaliveTimer = new System.Threading.Timer(async _ =>
         {
-            GattCharacteristic? tx;
-            byte sessId;
-            lock (_stateLock)
-            {
-                if (_sessionState != BluetoothSessionState.Streaming || _txCharacteristic == null) return;
-                tx = _txCharacteristic;
-                sessId = _currentSessionId;
-            }
-
+            if (Interlocked.Exchange(ref writePending, 1) != 0) return;
             try
             {
+                GattCharacteristic tx;
+                byte sessId;
+                lock (_stateLock)
+                {
+                    if (connectionGeneration != _connectionGeneration || sessionGeneration != _sessionGeneration ||
+                        _sessionState != BluetoothSessionState.Streaming || _txCharacteristic == null) return;
+                    tx = _txCharacteristic;
+                    sessId = _currentSessionId;
+                }
                 byte[] extend = ATVVProtocol.BuildMicrophoneExtend(sessId);
                 var buffer = CryptographicBuffer.CreateFromByteArray(extend);
-                await tx.WriteValueAsync(buffer, GattWriteOption.WriteWithoutResponse);
+                var status = await tx.WriteValueAsync(buffer, GattWriteOption.WriteWithoutResponse);
+                AppLogger.Debug($"MIC_EXTEND: SessionId={sessId}, Status={status}", "BluetoothManager");
             }
             catch (Exception ex)
             {
                 AppLogger.Warn($"Keepalive extend failed: {ex.Message}", "BluetoothManager");
+            }
+            finally
+            {
+                Volatile.Write(ref writePending, 0);
             }
         }, null, 8000, 8000);
     }
@@ -912,7 +921,8 @@ public sealed class WinRtBluetoothManager : IBluetoothManager
                 break;
 
             case ATVVProtocol.OpcodeAudioStop: // 0x00
-                AppLogger.Info("ATVV packet AudioStop (0x00) received from remote (voice key released)", "BluetoothManager");
+                AppLogger.Info($"ATVV AudioStop received: Reason={(data.Length > 1 ? $"0x{data[1]:X2}" : "missing")}, " +
+                    $"State={_sessionState}, SessionId={_currentSessionId}", "BluetoothManager");
                 lock (_stateLock)
                 {
                     if (capturedConnGen != _connectionGeneration) return;

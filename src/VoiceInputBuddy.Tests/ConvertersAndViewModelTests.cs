@@ -127,7 +127,7 @@ public class ConvertersAndViewModelTests
         vm.ResetToDefaults();
         vm.SelectButton("Home");
         Assert.Equal(ButtonActionType.KeyboardShortcut, vm.SelectedMapping.ClickAction);
-        Assert.Equal("Alt+Tab", vm.SelectedMapping.ParameterText);
+        Assert.Equal("Win+Tab", vm.SelectedMapping.ParameterText);
     }
 
     [Fact]

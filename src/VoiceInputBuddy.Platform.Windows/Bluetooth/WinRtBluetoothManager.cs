@@ -101,12 +101,14 @@ public sealed class WinRtBluetoothManager : IBluetoothManager
                 using var device = await BluetoothLEDevice.FromIdAsync(info.Id);
                 if (device == null) continue;
                 AppLogger.Info($"Found paired remote: '{info.Name}' (0x{device.BluetoothAddress:X12}), OS status={device.ConnectionStatus}", "BluetoothManager");
+                var modelType = XiaomiProtocol.DetectModelType(info.Name);
                 DeviceDiscovered?.Invoke(new RemoteDevice
                 {
                     Id = device.BluetoothAddress.ToString("X"),
                     BluetoothAddress = device.BluetoothAddress,
                     Name = info.Name,
-                    ModelType = XiaomiProtocol.DetectModelType(info.Name)
+                    ModelType = modelType,
+                    Mappings = RemoteDevice.CreateDefaultMappings(modelType)
                 });
             }
         }
@@ -137,12 +139,14 @@ public sealed class WinRtBluetoothManager : IBluetoothManager
         if (XiaomiProtocol.IsCandidate(name) || G9N9NProtocol.IsCandidate(name))
         {
             AppLogger.Info($"Discovered candidate remote: '{name}' (Address: 0x{args.BluetoothAddress:X12}, RSSI: {args.RawSignalStrengthInDBm} dBm)", "BluetoothManager");
+            var modelType = XiaomiProtocol.DetectModelType(name);
             var device = new RemoteDevice
             {
                 Id = args.BluetoothAddress.ToString("X"),
                 BluetoothAddress = args.BluetoothAddress,
                 Name = name,
-                ModelType = XiaomiProtocol.DetectModelType(name),
+                ModelType = modelType,
+                Mappings = RemoteDevice.CreateDefaultMappings(modelType),
                 IsConnected = false
             };
             DeviceDiscovered?.Invoke(device);

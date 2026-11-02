@@ -271,6 +271,12 @@ public partial class MappingItemViewModel : ObservableObject
             ? System.Windows.Visibility.Visible
             : System.Windows.Visibility.Collapsed;
 
+    public string ParameterLabel => ClickAction == ButtonActionType.TextSnippet ? "常用短语：" : "目标键盘快捷键：";
+
+    public string ParameterHint => ClickAction == ButtonActionType.TextSnippet
+        ? "输入要在按下遥控器按键时插入的文字；留空时不输入内容。"
+        : "提示: 支持组合键，如 'Ctrl+Alt+A'、'Enter'、'Escape'、'Up'、'Alt+Tab'、'Win+D' 等。";
+
     public System.Windows.Visibility MediaVisibility =>
         ClickAction == ButtonActionType.MediaControl
             ? System.Windows.Visibility.Visible
@@ -320,6 +326,8 @@ public partial class MappingItemViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(TextOrShortcutVisibility));
         OnPropertyChanged(nameof(MediaVisibility));
+        OnPropertyChanged(nameof(ParameterLabel));
+        OnPropertyChanged(nameof(ParameterHint));
 
         if (_isInitializing) return;
 

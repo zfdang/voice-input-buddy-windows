@@ -156,10 +156,10 @@
 
                                 <!-- Keyboard Shortcut Input -->
                                 <StackPanel Visibility="{Binding TextOrShortcutVisibility}">
-                                    <TextBlock Text="目标键盘快捷键：" FontSize="13" Foreground="{StaticResource PrimaryTextBrush}" Margin="0,0,0,6"/>
+                                    <TextBlock Text="{Binding ParameterLabel}" FontSize="13" Foreground="{StaticResource PrimaryTextBrush}" Margin="0,0,0,6"/>
                                     <TextBox Text="{Binding ParameterText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
                                              Background="#1E1E1E" Foreground="#FFF" Padding="10,7" Margin="0,0,0,6"/>
-                                    <TextBlock Text="提示: 支持组合键，如 'Ctrl+Alt+A'、'Enter'、'Escape'、'Up'、'Alt+Tab'、'Win+D' 等。"
+                                    <TextBlock Text="{Binding ParameterHint}" TextWrapping="Wrap"
                                                FontSize="11" Foreground="{StaticResource SecondaryTextBrush}" Margin="0,0,0,10"/>
                                 </StackPanel>
 

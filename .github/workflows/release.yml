@@ -63,6 +63,8 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist/release
+          Copy-Item LICENSE dist/publish/win-x64/
+          Copy-Item THIRD_PARTY_NOTICES.md dist/publish/win-x64/
           Compress-Archive -Path dist/publish/win-x64/* -DestinationPath "dist/release/Voice_Input_Buddy_${{ env.RELEASE_TAG }}_Windows_x64.zip"
 
       - name: Upload Windows build artifact
@@ -98,6 +100,7 @@ jobs:
           else
             echo "Creating new release $RELEASE_TAG..."
             gh release create "$RELEASE_TAG" release/* \
+              --target "${{ github.sha }}" \
               --title "Voice Input Buddy (Windows) $RELEASE_TAG" \
               --notes "Voice Input Buddy for Windows automated release $RELEASE_TAG."
           fi

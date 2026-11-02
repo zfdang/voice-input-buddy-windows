@@ -14,6 +14,8 @@ public partial class App : Application
 
     private void OnStartup(object sender, StartupEventArgs e)
     {
+        bool startMinimized = e.Args.Any(a => string.Equals(a, "--minimized", StringComparison.OrdinalIgnoreCase));
+
         // Prevent shutdown when modal onboarding dialog closes
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
@@ -34,7 +36,21 @@ public partial class App : Application
             ShowOnboardingWindow();
         }
 
-        mainWindow.Show();
+        // Auto-reconnect to previously saved remote device
+        if (_configService.Current.HasCompletedOnboarding && !string.IsNullOrEmpty(_configService.Current.SelectedDeviceId))
+        {
+            var savedDevice = _configService.Current.Devices.FirstOrDefault(d => d.Id == _configService.Current.SelectedDeviceId);
+            if (savedDevice != null && savedDevice.BluetoothAddress != 0)
+            {
+                _ = _bluetoothManager.ConnectAsync(savedDevice.BluetoothAddress);
+            }
+        }
+
+        if (!startMinimized || !_configService.Current.HasCompletedOnboarding)
+        {
+            mainWindow.Show();
+        }
+
         ShutdownMode = ShutdownMode.OnMainWindowClose;
     }
 

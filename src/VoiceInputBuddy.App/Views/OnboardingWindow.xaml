@@ -30,12 +30,8 @@
                 <TextBlock Text="欢迎使用 Voice Input Buddy（语音搭子）" FontSize="20" FontWeight="Bold" Foreground="{StaticResource PrimaryTextBrush}" Margin="0,0,0,10"/>
                 <TextBlock Text="本向导将引导您完成虚拟音频驱动检查、蓝牙遥控器连接与目标输入法快捷键配置。" Foreground="{StaticResource SecondaryTextBrush}" TextWrapping="Wrap" Margin="0,0,0,24"/>
                 
-                <TextBlock Text="选择界面显示语言：" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}" Margin="0,0,0,8"/>
-                <ComboBox Width="220" HorizontalAlignment="Left" SelectedIndex="0" Margin="0,0,0,20">
-                    <ComboBoxItem Content="跟随系统 (System Default)"/>
-                    <ComboBoxItem Content="简体中文"/>
-                    <ComboBoxItem Content="English"/>
-                </ComboBox>
+                <TextBlock Text="界面显示语言：" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}" Margin="0,0,0,8"/>
+                <TextBlock Text="简体中文 (当前版本优先支持中文界面)" Foreground="{StaticResource SecondaryTextBrush}" Margin="0,0,0,24"/>
             </StackPanel>
 
             <!-- Step 2: Virtual Audio Driver Check -->
@@ -103,7 +99,23 @@
             <!-- Step 6: IME Tool Configuration -->
             <StackPanel x:Name="Step6Panel" Visibility="Collapsed">
                 <TextBlock Text="配置目标语音输入工具" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}" Margin="0,0,0,10"/>
-                <TextBlock Text="1. 在微信输入法或豆包设置中，将麦克风手动选择为「CABLE Output」；&#x0a;2. 设置与本程序一致的语音触发快捷键（如 Ctrl+Shift+Alt+V 或 F1）。&#x0a;3. 若使用 Windows 11 自带听写 (Win+H)，请在系统声音设置中将「CABLE Output」设为默认录音设备。" Foreground="{StaticResource SecondaryTextBrush}" TextWrapping="Wrap" Margin="0,0,0,16"/>
+                <TextBlock Text="选择您正在使用的语音输入法，系统将自动配置匹配的快捷键与模式：" Foreground="{StaticResource SecondaryTextBrush}" TextWrapping="Wrap" Margin="0,0,0,14"/>
+
+                <WrapPanel Margin="0,0,0,14">
+                    <Button Content="微信输入法" Margin="0,0,8,8" Command="{Binding ApplyPresetCommand}" CommandParameter="WeChatInput"/>
+                    <Button Content="豆包输入法" Margin="0,0,8,8" Command="{Binding ApplyPresetCommand}" CommandParameter="DoubaoInput"/>
+                    <Button Content="Windows 听写 (Win+H)" Margin="0,0,8,8" Command="{Binding ApplyPresetCommand}" CommandParameter="WindowsDictation"/>
+                    <Button Content="Typeless" Margin="0,0,8,8" Command="{Binding ApplyPresetCommand}" CommandParameter="Typeless"/>
+                </WrapPanel>
+
+                <Border Background="{StaticResource CardBackgroundBrush}" Padding="14" CornerRadius="6" Margin="0,0,0,14">
+                    <StackPanel>
+                        <TextBlock Text="当前语音触发快捷键：" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}" Margin="0,0,0,6"/>
+                        <TextBox Text="{Binding ShortcutText, UpdateSourceTrigger=PropertyChanged}" Width="250" HorizontalAlignment="Left" Background="#1E1E1E" Foreground="#FFF" Padding="8,4" Margin="0,0,0,10"/>
+                        <TextBlock Text="麦克风输入端点要求：" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}" Margin="0,0,0,4"/>
+                        <TextBlock Text="请在目标输入法中将麦克风选择为「CABLE Output」；对于 Windows 听写，请将「CABLE Output」设为系统默认麦克风。" Foreground="{StaticResource SecondaryTextBrush}" TextWrapping="Wrap" FontSize="12"/>
+                    </StackPanel>
+                </Border>
             </StackPanel>
 
             <!-- Step 7: Live Transcription Verification -->

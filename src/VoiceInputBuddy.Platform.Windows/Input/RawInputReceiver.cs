@@ -75,7 +75,7 @@ public sealed class RawInputReceiver : IDisposable
         ref uint PropertyBufferSize,
         uint ulFlags);
 
-    public event Action<RemoteButton, bool>? ButtonEvent;
+    public event Action<IntPtr, RemoteButton, bool>? ButtonEvent;
 
     public Func<IntPtr, string, bool>? DeviceFilter { get; set; }
 
@@ -93,7 +93,7 @@ public sealed class RawInputReceiver : IDisposable
         {
             var key = new DEVPROPKEY
             {
-                fmtid = new Guid("8c7fd206-1020-40d4-9e16-81256e08b877"),
+                fmtid = new Guid("8c7ed206-3f8a-4827-b3ab-ae9e1faefc6c"),
                 pid = 2 // DEVPKEY_Device_ContainerId
             };
 
@@ -189,6 +189,13 @@ public sealed class RawInputReceiver : IDisposable
                 usUsage = 0x01,     // Consumer Control Device
                 dwFlags = RIDEV_INPUTSINK,
                 hwndTarget = hwnd
+            },
+            new()
+            {
+                usUsagePage = 0x01, // Generic Desktop Controls
+                usUsage = 0x06,     // Keyboard
+                dwFlags = RIDEV_INPUTSINK,
+                hwndTarget = hwnd
             }
         };
 
@@ -257,7 +264,18 @@ public sealed class RawInputReceiver : IDisposable
                 for (int i = 0; i < (int)dwCount; i++)
                 {
                     var slice = rawBytes.AsSpan(i * reportSize, reportSize);
-                    if (!G9N9NProtocol.TryParseReport(slice, out var currentButtons))
+                    bool recognized = false;
+                    List<RemoteButton> currentButtons;
+                    if (G9N9NProtocol.TryParseReport(slice, out currentButtons))
+                    {
+                        recognized = true;
+                    }
+                    else if (XiaomiProtocol.TryParseReport(slice, out currentButtons))
+                    {
+                        recognized = true;
+                    }
+
+                    if (!recognized)
                     {
                         continue;
                     }
@@ -277,7 +295,7 @@ public sealed class RawInputReceiver : IDisposable
                     foreach (var btn in released)
                     {
                         pressedButtons.Remove(btn);
-                        ButtonEvent?.Invoke(btn, false);
+                        ButtonEvent?.Invoke(hDevice, btn, false);
                     }
 
                     // 2. Newly pressed buttons -> KeyDown (true)
@@ -285,7 +303,7 @@ public sealed class RawInputReceiver : IDisposable
                     {
                         if (pressedButtons.Add(btn))
                         {
-                            ButtonEvent?.Invoke(btn, true);
+                            ButtonEvent?.Invoke(hDevice, btn, true);
                         }
                     }
                 }
@@ -307,6 +325,13 @@ public sealed class RawInputReceiver : IDisposable
                 {
                     usUsagePage = 0x0C,
                     usUsage = 0x01,
+                    dwFlags = RIDEV_REMOVE,
+                    hwndTarget = IntPtr.Zero
+                },
+                new()
+                {
+                    usUsagePage = 0x01,
+                    usUsage = 0x06,
                     dwFlags = RIDEV_REMOVE,
                     hwndTarget = IntPtr.Zero
                 }

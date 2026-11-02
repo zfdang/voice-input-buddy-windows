@@ -3,8 +3,9 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:VoiceInputBuddy.App.ViewModels"
              mc:Ignorable="d" 
-             d:DesignHeight="550" d:DesignWidth="700">
+             d:DesignHeight="550" d:DesignWidth="750">
     <Grid>
         <DockPanel LastChildFill="True">
             <DockPanel DockPanel.Dock="Top" Margin="0,0,0,16">
@@ -12,27 +13,32 @@
                 <Button Content="💾 保存配置" HorizontalAlignment="Right" Padding="14,6" Background="#007ACC" Command="{Binding SaveMappingsCommand}"/>
             </DockPanel>
 
-            <TextBlock DockPanel.Dock="Top" Text="配置遥控器普通硬件按键的单击、双击与长按动作：" Foreground="{StaticResource SecondaryTextBrush}" Margin="0,0,0,16"/>
+            <TextBlock DockPanel.Dock="Top" Text="配置遥控器普通硬件按键的单击与长按动作：" Foreground="{StaticResource SecondaryTextBrush}" Margin="0,0,0,16"/>
 
             <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <ItemsControl ItemsSource="{Binding CurrentMappings}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Border Background="{StaticResource CardBackgroundBrush}" Margin="0,0,0,8" Padding="14" CornerRadius="6">
+                            <Border Background="{StaticResource CardBackgroundBrush}" Margin="0,0,0,8" Padding="12" CornerRadius="6">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="140"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="110"/>
+                                        <ColumnDefinition Width="170"/>
+                                        <ColumnDefinition Width="180"/>
+                                        <ColumnDefinition Width="170"/>
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Grid.Column="0" Text="{Binding Button}" FontWeight="SemiBold" VerticalAlignment="Center" Foreground="{StaticResource PrimaryTextBrush}"/>
-                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                        <TextBlock Text="单击: " Foreground="{StaticResource SecondaryTextBrush}"/>
-                                        <TextBlock Text="{Binding ClickShortcut, FallbackValue='(无)'}" Foreground="{StaticResource PrimaryTextBrush}"/>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,10,0">
+                                        <TextBlock Text="动作: " Foreground="{StaticResource SecondaryTextBrush}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                        <ComboBox ItemsSource="{x:Static vm:MappingItemViewModel.AvailableActions}" SelectedItem="{Binding ClickAction, Mode=TwoWay}" Width="120"/>
                                     </StackPanel>
-                                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                                        <TextBlock Text="长按: " Foreground="{StaticResource SecondaryTextBrush}"/>
-                                        <TextBlock Text="{Binding LongPressAction}" Foreground="{StaticResource PrimaryTextBrush}"/>
+                                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,10,0">
+                                        <TextBlock Text="参数: " Foreground="{StaticResource SecondaryTextBrush}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                        <TextBox Text="{Binding ClickShortcut, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="130" Background="#1E1E1E" Foreground="#FFF" Padding="4,2"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Text="长按: " Foreground="{StaticResource SecondaryTextBrush}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                        <ComboBox ItemsSource="{x:Static vm:MappingItemViewModel.AvailableLongPressActions}" SelectedItem="{Binding LongPressAction, Mode=TwoWay}" Width="120"/>
                                     </StackPanel>
                                 </Grid>
                             </Border>

@@ -185,20 +185,108 @@ public static class G9N9NProtocol
 
 public static class XiaomiProtocol
 {
+    public static readonly Dictionary<ushort, RemoteButton> Usages = new()
+    {
+        // Standard HID Keyboard usages
+        [0x0052] = RemoteButton.Up,
+        [0x0051] = RemoteButton.Down,
+        [0x0050] = RemoteButton.Left,
+        [0x004F] = RemoteButton.Right,
+        [0x0028] = RemoteButton.Ok,
+        [0x00F1] = RemoteButton.Back,
+        [0x004A] = RemoteButton.Home,
+        [0x0065] = RemoteButton.Menu,
+        [0x0080] = RemoteButton.VolumeUp,
+        [0x0081] = RemoteButton.VolumeDown,
+        [0x0035] = RemoteButton.LiveTv,
+        [0x0066] = RemoteButton.Power,
+
+        // Consumer Control usages
+        [0x0042] = RemoteButton.Up,
+        [0x0043] = RemoteButton.Down,
+        [0x0044] = RemoteButton.Left,
+        [0x0045] = RemoteButton.Right,
+        [0x0041] = RemoteButton.Ok,
+        [0x0224] = RemoteButton.Back,
+        [0x0223] = RemoteButton.Home,
+        [0x0221] = RemoteButton.Menu,
+        [0x00E9] = RemoteButton.VolumeUp,
+        [0x00EA] = RemoteButton.VolumeDown,
+        [0x00E2] = RemoteButton.Mute,
+        [0x019E] = RemoteButton.Power
+    };
+
+    public static readonly string[] AdoptedNames =
+    [
+        "mi rc",
+        "xiaomi bluetooth remote 2",
+        "xiaomi bluetooth remote 2 pro",
+        "小米蓝牙语音遥控器",
+        "小米蓝牙遥控器2",
+        "小米蓝牙遥控器2 pro",
+        "arn9"
+    ];
+
     public static bool IsCandidate(string? name)
     {
         if (string.IsNullOrWhiteSpace(name)) return false;
         string clean = name.Trim().ToLowerInvariant();
-        return clean.Contains("xiaomi") || clean.Contains("rc001") || clean.Contains("rc003") || clean.Contains("mi ");
+        if (clean.Contains("xiaomi") || clean.Contains("rc001") || clean.Contains("rc003") || clean.Contains("mi "))
+        {
+            return true;
+        }
+        foreach (var adopted in AdoptedNames)
+        {
+            if (clean.Contains(adopted)) return true;
+        }
+        return false;
     }
 
     public static RemoteModelType DetectModelType(string? name)
     {
         if (string.IsNullOrWhiteSpace(name)) return RemoteModelType.Unknown;
         string clean = name.Trim().ToLowerInvariant();
-        if (clean.Contains("rc003")) return RemoteModelType.XiaomiRC003;
-        if (clean.Contains("rc001")) return RemoteModelType.XiaomiRC001;
+        if (clean.Contains("rc003") || clean.Contains("2 pro") || clean.Contains("语音遥控器")) return RemoteModelType.XiaomiRC003;
+        if (clean.Contains("rc001") || clean.Contains("remote 2") || clean.Contains("遥控器2")) return RemoteModelType.XiaomiRC001;
         if (G9N9NProtocol.IsCandidate(name)) return RemoteModelType.GoogleG9N9N;
+        if (IsCandidate(name)) return RemoteModelType.XiaomiRC003;
         return RemoteModelType.Unknown;
+    }
+
+    public static bool TryParseReport(ReadOnlySpan<byte> data, out List<RemoteButton> buttons)
+    {
+        buttons = new();
+        if (data.IsEmpty) return false;
+
+        ReadOnlySpan<byte> slice = data;
+        // If has report ID 1 and odd length, skip report ID
+        if (slice.Length > 1 && slice.Length % 2 != 0 && slice[0] == 1)
+        {
+            slice = slice[1..];
+        }
+
+        if (slice.Length % 2 != 0 || slice.Length == 0) return false;
+
+        // Check for all-zero release report
+        bool allZero = true;
+        for (int i = 0; i < slice.Length; i++)
+        {
+            if (slice[i] != 0) { allZero = false; break; }
+        }
+        if (allZero)
+        {
+            return true;
+        }
+
+        for (int i = 0; i < slice.Length; i += 2)
+        {
+            ushort usage = (ushort)(slice[i] | (slice[i + 1] << 8));
+            if (usage != 0 && Usages.TryGetValue(usage, out var btn))
+            {
+                buttons.Add(btn);
+            }
+        }
+
+        return buttons.Count > 0;
     }
 }

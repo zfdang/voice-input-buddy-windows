@@ -251,4 +251,117 @@ public class AudioDecoderAndProtocolTests
         Assert.NotNull(deserialized);
         Assert.Equal(guid, deserialized.ContainerId);
     }
+
+    [Fact]
+    public void XiaomiProtocol_IsCandidate_RecognizesChineseAndEnglishBroadcastNames()
+    {
+        Assert.True(XiaomiProtocol.IsCandidate("小米蓝牙语音遥控器"));
+        Assert.True(XiaomiProtocol.IsCandidate("小米蓝牙遥控器2"));
+        Assert.True(XiaomiProtocol.IsCandidate("小米蓝牙遥控器2 pro"));
+        Assert.True(XiaomiProtocol.IsCandidate("arn9"));
+        Assert.True(XiaomiProtocol.IsCandidate("MI RC"));
+        Assert.True(XiaomiProtocol.IsCandidate("xiaomi remote"));
+        Assert.False(XiaomiProtocol.IsCandidate("Logitech Keyboard"));
+        Assert.False(XiaomiProtocol.IsCandidate(null));
+        Assert.False(XiaomiProtocol.IsCandidate(""));
+    }
+
+    [Fact]
+    public void XiaomiProtocol_TryParseReport_ParsesReport1AndRelease()
+    {
+        // Report 1 with Up (0x0052)
+        byte[] upWithId = [0x01, 0x52, 0x00];
+        Assert.True(XiaomiProtocol.TryParseReport(upWithId, out var upButtons));
+        Assert.Single(upButtons);
+        Assert.Equal(VoiceInputBuddy.Core.Models.RemoteButton.Up, upButtons[0]);
+
+        // Report 1 with OK (0x0028)
+        byte[] okWithId = [0x01, 0x28, 0x00];
+        Assert.True(XiaomiProtocol.TryParseReport(okWithId, out var okButtons));
+        Assert.Single(okButtons);
+        Assert.Equal(VoiceInputBuddy.Core.Models.RemoteButton.Ok, okButtons[0]);
+
+        // Without Report ID: Up (0x0052)
+        byte[] upWithoutId = [0x52, 0x00];
+        Assert.True(XiaomiProtocol.TryParseReport(upWithoutId, out var upNoIdButtons));
+        Assert.Single(upNoIdButtons);
+        Assert.Equal(VoiceInputBuddy.Core.Models.RemoteButton.Up, upNoIdButtons[0]);
+
+        // All zero release with Report ID
+        byte[] releaseWithId = [0x01, 0x00, 0x00];
+        Assert.True(XiaomiProtocol.TryParseReport(releaseWithId, out var releaseButtons));
+        Assert.Empty(releaseButtons);
+
+        // All zero release without Report ID
+        byte[] releaseWithoutId = [0x00, 0x00];
+        Assert.True(XiaomiProtocol.TryParseReport(releaseWithoutId, out var releaseNoIdButtons));
+        Assert.Empty(releaseNoIdButtons);
+    }
+
+    [Fact]
+    public void ATVVFrameAccumulator_DelaysSyncWhenReceivedMidFrame()
+    {
+        var accumulator = new ATVVFrameAccumulator();
+        int frameSize = 120;
+
+        // Step 1: Send partial 40 bytes
+        byte[] chunk1 = new byte[40];
+        Array.Fill(chunk1, (byte)0x11);
+        var frames1 = accumulator.Append(chunk1, frameSize);
+        Assert.Empty(frames1);
+        Assert.Equal(40, accumulator.PendingCount);
+
+        // Step 2: Sync arrives mid-frame (predictor = 1000, stepIndex = 10)
+        accumulator.Synchronize(1000, 10);
+
+        // Step 3: Send remaining 80 bytes for the first frame
+        byte[] chunk2 = new byte[80];
+        Array.Fill(chunk2, (byte)0x11);
+        var frames2 = accumulator.Append(chunk2, frameSize);
+        Assert.Single(frames2);
+        Assert.Equal(120, frames2[0].Length);
+        Assert.Equal(0, accumulator.PendingCount);
+
+        // First frame should NOT apply sync because sync was received mid-frame
+        bool syncForFirstFrame = accumulator.TryConsumeSyncForNextFrame(out short p1, out byte s1);
+        Assert.False(syncForFirstFrame);
+        Assert.Equal(0, p1);
+        Assert.Equal(0, s1);
+
+        // Step 4: Next 120 bytes arrive
+        byte[] chunk3 = new byte[120];
+        Array.Fill(chunk3, (byte)0x22);
+        var frames3 = accumulator.Append(chunk3, frameSize);
+        Assert.Single(frames3);
+
+        // Second frame MUST apply the delayed sync!
+        bool syncForSecondFrame = accumulator.TryConsumeSyncForNextFrame(out short p2, out byte s2);
+        Assert.True(syncForSecondFrame);
+        Assert.Equal(1000, p2);
+        Assert.Equal(10, s2);
+
+        // Consumed sync should not apply again
+        Assert.False(accumulator.TryConsumeSyncForNextFrame(out _, out _));
+    }
+
+    [Fact]
+    public void ATVVFrameAccumulator_AppliesSyncImmediatelyWhenAccumulatorEmpty()
+    {
+        var accumulator = new ATVVFrameAccumulator();
+        int frameSize = 120;
+
+        // Accumulator is empty: sync arrives
+        accumulator.Synchronize(500, 8);
+
+        // Next frame arrives
+        byte[] chunk = new byte[120];
+        var frames = accumulator.Append(chunk, frameSize);
+        Assert.Single(frames);
+
+        // Sync should be consumed immediately for this frame
+        bool applied = accumulator.TryConsumeSyncForNextFrame(out short p, out byte s);
+        Assert.True(applied);
+        Assert.Equal(500, p);
+        Assert.Equal(8, s);
+    }
 }

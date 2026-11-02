@@ -55,8 +55,6 @@
 
         <!-- Main Content Area -->
         <Grid Grid.Column="1" Margin="24">
-            <pages:DevicesPage Visibility="{Binding ActivePageName, Converter={x:Null}}" 
-                               DataContext="{Binding DevicesVm}"/>
             <!-- Dynamic Page Swap Handled in Code-Behind for Clean Simplicity -->
             <ContentControl x:Name="PageContentContainer"/>
         </Grid>

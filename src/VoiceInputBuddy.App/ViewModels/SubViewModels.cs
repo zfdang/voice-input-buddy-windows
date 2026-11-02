@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Reflection;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using VoiceInputBuddy.Core.Config;
@@ -99,12 +100,58 @@ public partial class DevicesViewModel : ObservableObject
     }
 }
 
+public partial class MappingItemViewModel : ObservableObject
+{
+    public ButtonMapping Source { get; }
+    public RemoteButton Button => Source.Button;
+
+    [ObservableProperty]
+    private ButtonActionType _clickAction;
+
+    [ObservableProperty]
+    private string _clickShortcut = string.Empty;
+
+    [ObservableProperty]
+    private MediaCommand _clickMedia;
+
+    [ObservableProperty]
+    private string _clickText = string.Empty;
+
+    [ObservableProperty]
+    private ButtonActionType _longPressAction;
+
+    public static ButtonActionType[] AvailableActions { get; } =
+        [ButtonActionType.None, ButtonActionType.KeyboardShortcut, ButtonActionType.MediaControl, ButtonActionType.TextSnippet];
+
+    public static ButtonActionType[] AvailableLongPressActions { get; } =
+        [ButtonActionType.None, ButtonActionType.ContinuousRepeat];
+
+    public MappingItemViewModel(ButtonMapping source)
+    {
+        Source = source;
+        ClickAction = source.ClickAction;
+        ClickShortcut = source.ClickShortcut ?? string.Empty;
+        ClickMedia = source.ClickMedia;
+        ClickText = source.ClickText ?? string.Empty;
+        LongPressAction = source.LongPressAction;
+    }
+
+    public void ApplyBack()
+    {
+        Source.ClickAction = ClickAction;
+        Source.ClickShortcut = string.IsNullOrWhiteSpace(ClickShortcut) ? null : ClickShortcut.Trim();
+        Source.ClickMedia = ClickMedia;
+        Source.ClickText = string.IsNullOrWhiteSpace(ClickText) ? null : ClickText.Trim();
+        Source.LongPressAction = LongPressAction;
+    }
+}
+
 public partial class MappingViewModel : ObservableObject
 {
     private readonly ConfigService _config;
 
     [ObservableProperty]
-    private ObservableCollection<ButtonMapping> _currentMappings = new();
+    private ObservableCollection<MappingItemViewModel> _currentMappings = new();
 
     public MappingViewModel(ConfigService config)
     {
@@ -125,7 +172,7 @@ public partial class MappingViewModel : ObservableObject
             }
             foreach (var m in selectedDev.Mappings)
             {
-                CurrentMappings.Add(m);
+                CurrentMappings.Add(new MappingItemViewModel(m));
             }
         }
         else
@@ -133,7 +180,7 @@ public partial class MappingViewModel : ObservableObject
             var defaults = RemoteDevice.CreateDefaultMappings(RemoteModelType.XiaomiRC001);
             foreach (var m in defaults)
             {
-                CurrentMappings.Add(m);
+                CurrentMappings.Add(new MappingItemViewModel(m));
             }
         }
     }
@@ -144,7 +191,11 @@ public partial class MappingViewModel : ObservableObject
         var selectedDev = _config.Current.Devices.FirstOrDefault(d => d.Id == _config.Current.SelectedDeviceId);
         if (selectedDev != null)
         {
-            selectedDev.Mappings = CurrentMappings.ToList();
+            foreach (var item in CurrentMappings)
+            {
+                item.ApplyBack();
+            }
+            selectedDev.Mappings = CurrentMappings.Select(i => i.Source).ToList();
             _config.Save();
         }
     }
@@ -215,8 +266,19 @@ public partial class IntegrationsViewModel : ObservableObject
                 TargetInputTool.Typeless => "Ctrl+Alt+V",
                 _ => "Ctrl+Shift+V"
             };
+            TriggerMode = (tool == TargetInputTool.WindowsDictation)
+                ? VoiceTriggerMode.ClickToToggle
+                : VoiceTriggerMode.HoldToTalk;
+            OnPropertyChanged(nameof(IsHoldToTalk));
+            OnPropertyChanged(nameof(IsClickToToggle));
             Save();
         }
+    }
+
+    partial void OnTriggerModeChanged(VoiceTriggerMode value)
+    {
+        OnPropertyChanged(nameof(IsHoldToTalk));
+        OnPropertyChanged(nameof(IsClickToToggle));
     }
 
     [RelayCommand]
@@ -265,19 +327,42 @@ public partial class SettingsViewModel : ObservableObject
     private bool _launchAtStartup;
 
     [ObservableProperty]
-    private string _appVersion = "v26.11.001";
+    private bool _minimizeToTrayOnClose;
+
+    [ObservableProperty]
+    private string _appVersion;
 
     public SettingsViewModel(ConfigService config, Action openOnboarding)
     {
         _config = config;
         _openOnboarding = openOnboarding;
         LaunchAtStartup = StartupService.IsLaunchAtStartupEnabled();
+        MinimizeToTrayOnClose = _config.Current.MinimizeToTrayOnClose;
+
+        var infoVer = Assembly.GetEntryAssembly()?
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+            .InformationalVersion;
+        if (!string.IsNullOrEmpty(infoVer))
+        {
+            AppVersion = "v" + infoVer.Split('+')[0];
+        }
+        else
+        {
+            var ver = Assembly.GetExecutingAssembly().GetName().Version;
+            AppVersion = ver != null ? $"v{ver.Major}.{ver.Minor}.{ver.Build}" : "v1.0.0";
+        }
     }
 
     partial void OnLaunchAtStartupChanged(bool value)
     {
         StartupService.SetLaunchAtStartup(value);
         _config.Current.LaunchAtStartup = value;
+        _config.Save();
+    }
+
+    partial void OnMinimizeToTrayOnCloseChanged(bool value)
+    {
+        _config.Current.MinimizeToTrayOnClose = value;
         _config.Save();
     }
 

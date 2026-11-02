@@ -24,7 +24,7 @@
             <Border Background="{StaticResource CardBackgroundBrush}" Padding="16" CornerRadius="6" Margin="0,0,0,20">
                 <StackPanel>
                     <CheckBox Content="开机时自动在后台启动" IsChecked="{Binding LaunchAtStartup}" Foreground="#FFF" Margin="0,0,0,16"/>
-                    <CheckBox Content="关闭主窗口时最小化至系统托盘" IsChecked="True" Foreground="#FFF" Margin="0,0,0,16"/>
+                    <CheckBox Content="关闭主窗口时最小化至系统托盘" IsChecked="{Binding MinimizeToTrayOnClose, Mode=TwoWay}" Foreground="#FFF" Margin="0,0,0,16"/>
 
                     <TextBlock Text="关于 Voice Input Buddy (Windows)：" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}" Margin="0,0,0,6"/>
                     <TextBlock Text="{Binding AppVersion, StringFormat='版本号: {0}'}" Foreground="{StaticResource SecondaryTextBrush}" Margin="0,0,0,4"/>

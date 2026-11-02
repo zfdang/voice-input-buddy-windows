@@ -130,3 +130,64 @@ public static class ATVVProtocol
         return true;
     }
 }
+
+public sealed class ATVVFrameAccumulator
+{
+    private readonly List<byte> _pending = new();
+    private (short Predictor, byte StepIndex)? _pendingSync;
+    private int _framesBeforeSync = 0;
+
+    public int PendingCount => _pending.Count;
+
+    public void Synchronize(short predictor, byte stepIndex)
+    {
+        _pendingSync = (predictor, stepIndex);
+        _framesBeforeSync = _pending.Count == 0 ? 0 : 1;
+    }
+
+    public void Reset()
+    {
+        _pending.Clear();
+        _pendingSync = null;
+        _framesBeforeSync = 0;
+    }
+
+    public List<byte[]> Append(ReadOnlySpan<byte> data, int frameSize)
+    {
+        if (frameSize <= 0) return new();
+        for (int i = 0; i < data.Length; i++)
+        {
+            _pending.Add(data[i]);
+        }
+
+        var frames = new List<byte[]>();
+        while (_pending.Count >= frameSize)
+        {
+            byte[] frame = _pending.GetRange(0, frameSize).ToArray();
+            _pending.RemoveRange(0, frameSize);
+            frames.Add(frame);
+        }
+        return frames;
+    }
+
+    public bool TryConsumeSyncForNextFrame(out short predictor, out byte stepIndex)
+    {
+        if (_pendingSync.HasValue && _framesBeforeSync == 0)
+        {
+            var sync = _pendingSync.Value;
+            _pendingSync = null;
+            predictor = sync.Predictor;
+            stepIndex = sync.StepIndex;
+            return true;
+        }
+
+        if (_framesBeforeSync > 0)
+        {
+            _framesBeforeSync--;
+        }
+
+        predictor = 0;
+        stepIndex = 0;
+        return false;
+    }
+}

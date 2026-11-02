@@ -54,6 +54,15 @@ public partial class OnboardingViewModel : ObservableObject
     private bool _hasAudioTested = false;
 
     [ObservableProperty]
+    private TargetInputTool _selectedTool;
+
+    [ObservableProperty]
+    private VoiceTriggerMode _triggerMode;
+
+    [ObservableProperty]
+    private string _shortcutText = string.Empty;
+
+    [ObservableProperty]
     private string _transcriptionTestText = string.Empty;
 
     [ObservableProperty]
@@ -62,12 +71,18 @@ public partial class OnboardingViewModel : ObservableObject
     [ObservableProperty]
     private string _validationError = string.Empty;
 
+    private bool _hasVoiceTranscriptionSessionOccurred = false;
+
     public event Action? RequestClose;
 
     public OnboardingViewModel(ConfigService config, WinRtBluetoothManager bt)
     {
         _config = config;
         _bt = bt;
+
+        SelectedTool = _config.Current.InputTool.Tool;
+        TriggerMode = _config.Current.InputTool.TriggerMode;
+        ShortcutText = _config.Current.InputTool.Shortcut;
 
         _bt.DeviceDiscovered += (dev) =>
         {
@@ -83,6 +98,11 @@ public partial class OnboardingViewModel : ObservableObject
         _bt.ConnectionStatusChanged += (connected, name) =>
         {
             IsDeviceConnected = connected;
+            if (!connected)
+            {
+                HasAudioTested = false;
+                _hasVoiceTranscriptionSessionOccurred = false;
+            }
         };
 
         _bt.AudioLevelChanged += (level) =>
@@ -91,6 +111,14 @@ public partial class OnboardingViewModel : ObservableObject
             if (level > 0.05f)
             {
                 HasAudioTested = true;
+            }
+        };
+
+        _bt.VoiceSessionEnded += () =>
+        {
+            if (CurrentStep == 7)
+            {
+                _hasVoiceTranscriptionSessionOccurred = true;
             }
         };
 
@@ -170,6 +198,35 @@ public partial class OnboardingViewModel : ObservableObject
     }
 
     [RelayCommand]
+    public void ApplyPreset(string toolName)
+    {
+        if (Enum.TryParse<TargetInputTool>(toolName, out var tool))
+        {
+            SelectedTool = tool;
+            ShortcutText = tool switch
+            {
+                TargetInputTool.WeChatInput => "Ctrl+Shift+Alt+V",
+                TargetInputTool.DoubaoInput => "F1",
+                TargetInputTool.WindowsDictation => "Win+H",
+                TargetInputTool.Typeless => "Ctrl+Alt+V",
+                _ => "Ctrl+Shift+V"
+            };
+            TriggerMode = (tool == TargetInputTool.WindowsDictation)
+                ? VoiceTriggerMode.ClickToToggle
+                : VoiceTriggerMode.HoldToTalk;
+            SaveToolConfig();
+        }
+    }
+
+    public void SaveToolConfig()
+    {
+        _config.Current.InputTool.Tool = SelectedTool;
+        _config.Current.InputTool.TriggerMode = TriggerMode;
+        _config.Current.InputTool.Shortcut = ShortcutText;
+        _config.Save();
+    }
+
+    [RelayCommand]
     public void NextStep()
     {
         ValidationError = string.Empty;
@@ -210,10 +267,24 @@ public partial class OnboardingViewModel : ObservableObject
                 }
                 break;
 
+            case 6: // IME Tool Configuration
+                SaveToolConfig();
+                break;
+
             case 7: // Live Transcription Verification
-                if (string.IsNullOrWhiteSpace(TranscriptionTestText) && !IsTranscriptionVerified)
+                if (!_hasVoiceTranscriptionSessionOccurred)
                 {
-                    ValidationError = "请在文本框内进行一次语音转写测试，并确认文字成功上屏。";
+                    ValidationError = "请先按住遥控器语音键在下方输入框中完成一次实际语音转写。";
+                    return;
+                }
+                if (string.IsNullOrWhiteSpace(TranscriptionTestText))
+                {
+                    ValidationError = "转写文本框内容不能为空，请先通过遥控器转写文字。";
+                    return;
+                }
+                if (!IsTranscriptionVerified)
+                {
+                    ValidationError = "请勾选确认输入法转写结果正确无误。";
                     return;
                 }
                 break;
@@ -244,6 +315,18 @@ public partial class OnboardingViewModel : ObservableObject
     [RelayCommand]
     public void Complete()
     {
+        RefreshDriverStatus();
+        if (DriverStatus != DriverReadinessStatus.Ready)
+        {
+            ValidationError = "虚拟麦克风驱动未就绪，无法完成设置。";
+            return;
+        }
+        if (!IsDeviceConnected)
+        {
+            ValidationError = "遥控器未连接，无法完成设置。";
+            return;
+        }
+        SaveToolConfig();
         _config.Current.HasCompletedOnboarding = true;
         _config.Save();
         RequestClose?.Invoke();
@@ -258,9 +341,9 @@ public partial class OnboardingViewModel : ObservableObject
             3 => "第 3 步：选择并连接遥控器",
             4 => "第 4 步：遥控器按键响应测试",
             5 => "第 5 步：麦克风拾音与动态波形测试",
-            6 => "第 6 步：目标输入法麦克风与快捷键配置",
-            7 => "第 7 步：真实语音输入转写验收",
-            8 => "第 8 步：环境配置完成，开始使用",
+            6 => "第 6 步：配置目标语音输入工具",
+            7 => "第 7 步：真实输入法转写验收",
+            8 => "第 8 步：设置完成与使用说明",
             _ => "设置向导"
         };
     }

@@ -10,10 +10,16 @@ namespace VoiceInputBuddy.App.ViewModels;
 
 public partial class MainViewModel : ObservableObject
 {
+    private record struct ActiveVoiceSession(VoiceTriggerMode TriggerMode, string Shortcut, TargetInputTool Tool);
+
     private readonly ConfigService _configService;
     private readonly WinRtBluetoothManager _bluetoothManager;
     private readonly RawInputReceiver _rawInputReceiver = new();
-    private string? _activeHeldShortcut;
+    private ActiveVoiceSession? _activeVoiceSession;
+
+    private System.Threading.Timer? _repeatTimer;
+    private RemoteButton _heldButton = RemoteButton.None;
+    private ButtonMapping? _activeRepeatMapping;
 
     [ObservableProperty]
     private string _currentTitle = "Voice Input Buddy (Windows)";
@@ -69,17 +75,17 @@ public partial class MainViewModel : ObservableObject
 
         _bluetoothManager.VoiceSessionStarted += () =>
         {
+            var currentConfig = _configService.Current.InputTool;
+            var session = new ActiveVoiceSession(currentConfig.TriggerMode, currentConfig.Shortcut, currentConfig.Tool);
+            _activeVoiceSession = session;
             IsVoiceActive = true;
-            string shortcut = _configService.Current.InputTool.Shortcut;
-            if (_configService.Current.InputTool.TriggerMode == VoiceTriggerMode.HoldToTalk)
+            if (session.TriggerMode == VoiceTriggerMode.HoldToTalk)
             {
-                _activeHeldShortcut = shortcut;
-                NativeInputSender.SendShortcutDown(shortcut);
+                NativeInputSender.SendShortcutDown(session.Shortcut);
             }
             else
             {
-                _activeHeldShortcut = null;
-                NativeInputSender.SendShortcutClick(shortcut);
+                NativeInputSender.SendShortcutClick(session.Shortcut);
             }
         };
 
@@ -87,15 +93,17 @@ public partial class MainViewModel : ObservableObject
         {
             IsVoiceActive = false;
             CurrentAudioLevel = 0f;
-            if (!string.IsNullOrEmpty(_activeHeldShortcut))
+            if (_activeVoiceSession is { } session)
             {
-                NativeInputSender.SendShortcutUp(_activeHeldShortcut);
-                _activeHeldShortcut = null;
-            }
-            else if (_configService.Current.InputTool.TriggerMode == VoiceTriggerMode.ClickToToggle)
-            {
-                string shortcut = _configService.Current.InputTool.Shortcut;
-                NativeInputSender.SendShortcutClick(shortcut);
+                _activeVoiceSession = null;
+                if (session.TriggerMode == VoiceTriggerMode.HoldToTalk)
+                {
+                    NativeInputSender.SendShortcutUp(session.Shortcut);
+                }
+                else if (session.TriggerMode == VoiceTriggerMode.ClickToToggle)
+                {
+                    NativeInputSender.SendShortcutClick(session.Shortcut);
+                }
             }
         };
 
@@ -116,50 +124,46 @@ public partial class MainViewModel : ObservableObject
     private bool IsTargetDevice(IntPtr hDevice, string devicePath)
     {
         // 1. Establish HID vs BLE correspondence through official Windows Container ID
+        Guid? targetContainerId = _bluetoothManager.ConnectedDeviceContainerId
+            ?? ActiveOnboardingVm?.SelectedDevice?.ContainerId
+            ?? _configService.Current.Devices.FirstOrDefault(d => d.Id == _configService.Current.SelectedDeviceId)?.ContainerId;
+
         Guid? deviceContainerId = RawInputReceiver.GetDeviceContainerId(devicePath);
-        if (deviceContainerId.HasValue)
+
+        if (targetContainerId.HasValue)
         {
-            // Match active BLE connection container
-            if (_bluetoothManager.ConnectedDeviceContainerId.HasValue &&
-                _bluetoothManager.ConnectedDeviceContainerId.Value == deviceContainerId.Value)
+            if (deviceContainerId.HasValue)
             {
-                return true;
+                // Strict check: if both have Container ID, they MUST match!
+                return deviceContainerId.Value == targetContainerId.Value;
             }
-
-            // Match onboarding device container
-            var onboardingDev = ActiveOnboardingVm?.SelectedDevice;
-            if (onboardingDev?.ContainerId != null &&
-                onboardingDev.ContainerId.Value == deviceContainerId.Value)
+            // Incoming device has no Container ID, but target device DOES have Container ID.
+            if (RawInputReceiver.GetHidDeviceInfo(hDevice, out uint vid, out _))
             {
-                return true;
-            }
-
-            // Match selected device container from configuration
-            var selectedDev = _configService.Current.Devices.FirstOrDefault(d => d.Id == _configService.Current.SelectedDeviceId);
-            if (selectedDev?.ContainerId != null &&
-                selectedDev.ContainerId.Value == deviceContainerId.Value)
-            {
-                return true;
+                if (vid != G9N9NProtocol.VendorId && vid != 0x2717 && vid != 0)
+                {
+                    return false;
+                }
             }
         }
 
         // 2. Query official HID device properties (VID/PID) via RIDI_DEVICEINFO
-        if (RawInputReceiver.GetHidDeviceInfo(hDevice, out uint vid, out uint pid))
+        if (RawInputReceiver.GetHidDeviceInfo(hDevice, out uint dVid, out uint dPid))
         {
             // Google G9N9N Voice Remote (VID 0x18D1, PID 0x9450)
-            if (vid == G9N9NProtocol.VendorId && pid == G9N9NProtocol.ProductId)
+            if (dVid == G9N9NProtocol.VendorId && dPid == G9N9NProtocol.ProductId)
             {
                 return true;
             }
 
             // Xiaomi Bluetooth Remote (VID 0x2717)
-            if (vid == 0x2717)
+            if (dVid == 0x2717)
             {
                 return true;
             }
 
             // If it's a known non-remote USB desktop keyboard or mouse, reject it
-            if (vid != 0)
+            if (dVid != 0)
             {
                 return false;
             }
@@ -169,7 +173,7 @@ public partial class MainViewModel : ObservableObject
         return true;
     }
 
-    private void OnRawButtonEvent(RemoteButton button, bool isDown)
+    private void OnRawButtonEvent(IntPtr hDevice, RemoteButton button, bool isDown)
     {
         if (ActiveOnboardingVm != null)
         {
@@ -193,31 +197,65 @@ public partial class MainViewModel : ObservableObject
             return;
         }
 
-        // Non-voice buttons execute action on KeyDown
-        if (!isDown) return;
-
         var selectedDev = _configService.Current.Devices.FirstOrDefault(d => d.Id == _configService.Current.SelectedDeviceId);
         var mapping = selectedDev?.Mappings?.FirstOrDefault(m => m.Button == button);
         if (mapping == null) return;
 
-        switch (mapping.ClickAction)
+        if (isDown)
+        {
+            ExecuteButtonAction(mapping.ClickAction, mapping.ClickShortcut, mapping.ClickMedia, mapping.ClickText);
+
+            if (mapping.LongPressAction == ButtonActionType.ContinuousRepeat)
+            {
+                StopRepeatTimer();
+                _heldButton = button;
+                _activeRepeatMapping = mapping;
+                _repeatTimer = new System.Threading.Timer(_ =>
+                {
+                    if (_activeRepeatMapping != null)
+                    {
+                        ExecuteButtonAction(_activeRepeatMapping.ClickAction, _activeRepeatMapping.ClickShortcut, _activeRepeatMapping.ClickMedia, _activeRepeatMapping.ClickText);
+                    }
+                }, null, 400, 100);
+            }
+        }
+        else
+        {
+            if (button == _heldButton)
+            {
+                StopRepeatTimer();
+            }
+        }
+    }
+
+    private void StopRepeatTimer()
+    {
+        _repeatTimer?.Dispose();
+        _repeatTimer = null;
+        _heldButton = RemoteButton.None;
+        _activeRepeatMapping = null;
+    }
+
+    private static void ExecuteButtonAction(ButtonActionType actionType, string? shortcut, MediaCommand media, string? text)
+    {
+        switch (actionType)
         {
             case ButtonActionType.KeyboardShortcut:
-                if (!string.IsNullOrEmpty(mapping.ClickShortcut))
+                if (!string.IsNullOrEmpty(shortcut))
                 {
-                    NativeInputSender.SendShortcutClick(mapping.ClickShortcut);
+                    NativeInputSender.SendShortcutClick(shortcut);
                 }
                 break;
             case ButtonActionType.MediaControl:
-                if (mapping.ClickMedia != MediaCommand.None)
+                if (media != MediaCommand.None)
                 {
-                    NativeInputSender.SendMedia(mapping.ClickMedia);
+                    NativeInputSender.SendMedia(media);
                 }
                 break;
             case ButtonActionType.TextSnippet:
-                if (!string.IsNullOrEmpty(mapping.ClickText))
+                if (!string.IsNullOrEmpty(text))
                 {
-                    NativeInputSender.SendUnicodeText(mapping.ClickText);
+                    NativeInputSender.SendUnicodeText(text);
                 }
                 break;
         }

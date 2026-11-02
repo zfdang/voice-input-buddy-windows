@@ -141,9 +141,10 @@ public static class NativeInputSender
             }
             else if (upper.Length == 1 && upper[0] >= 'A' && upper[0] <= 'Z') mainKey = upper[0];
             else if (upper.Length == 1 && upper[0] >= '0' && upper[0] <= '9') mainKey = upper[0];
+            else return false;
         }
 
-        return mainKey != 0;
+        return mainKey != 0 || modifiers.Count > 0;
     }
 
     public static bool SendShortcutDown(string shortcut)
@@ -151,7 +152,7 @@ public static class NativeInputSender
         if (!TryParseShortcut(shortcut, out var modifiers, out ushort mainKey)) return false;
         var inputs = new List<INPUT>();
         foreach (var mod in modifiers) inputs.Add(CreateKeyInput(mod, false));
-        inputs.Add(CreateKeyInput(mainKey, false));
+        if (mainKey != 0) inputs.Add(CreateKeyInput(mainKey, false));
         uint sent = SendInput((uint)inputs.Count, inputs.ToArray(), Marshal.SizeOf<INPUT>());
         return sent == inputs.Count;
     }
@@ -160,7 +161,7 @@ public static class NativeInputSender
     {
         if (!TryParseShortcut(shortcut, out var modifiers, out ushort mainKey)) return false;
         var inputs = new List<INPUT>();
-        inputs.Add(CreateKeyInput(mainKey, true));
+        if (mainKey != 0) inputs.Add(CreateKeyInput(mainKey, true));
         for (int i = modifiers.Count - 1; i >= 0; i--) inputs.Add(CreateKeyInput(modifiers[i], true));
         uint sent = SendInput((uint)inputs.Count, inputs.ToArray(), Marshal.SizeOf<INPUT>());
         return sent == inputs.Count;
@@ -172,8 +173,11 @@ public static class NativeInputSender
 
         var inputs = new List<INPUT>();
         foreach (var mod in modifiers) inputs.Add(CreateKeyInput(mod, false));
-        inputs.Add(CreateKeyInput(mainKey, false));
-        inputs.Add(CreateKeyInput(mainKey, true));
+        if (mainKey != 0)
+        {
+            inputs.Add(CreateKeyInput(mainKey, false));
+            inputs.Add(CreateKeyInput(mainKey, true));
+        }
         for (int i = modifiers.Count - 1; i >= 0; i--) inputs.Add(CreateKeyInput(modifiers[i], true));
 
         uint sent = SendInput((uint)inputs.Count, inputs.ToArray(), Marshal.SizeOf<INPUT>());

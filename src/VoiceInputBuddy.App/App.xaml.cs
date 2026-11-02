@@ -114,6 +114,7 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         AppLogger.Info($"=== Application Exiting (ExitCode: {e.ApplicationExitCode}) ===", "App");
+        _mainViewModel?.Dispose();
         _bluetoothManager?.Dispose();
         AppLogger.Flush();
         base.OnExit(e);

@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Text;
 using VoiceInputBuddy.Core.Diagnostics;
 using VoiceInputBuddy.Core.Models;
 using VoiceInputBuddy.Core.Protocols;
@@ -91,7 +92,15 @@ public sealed class RawInputReceiver : IDisposable
         ref uint PropertyBufferSize,
         uint ulFlags);
 
+    [DllImport("cfgmgr32.dll", EntryPoint = "CM_Locate_DevNodeW", CharSet = CharSet.Unicode)]
+    private static extern uint CM_Locate_DevNode(out uint devInst, string deviceId, uint flags);
+
+    [DllImport("cfgmgr32.dll", EntryPoint = "CM_Get_DevNode_PropertyW")]
+    private static extern uint CM_Get_DevNode_Property(uint devInst, ref DEVPROPKEY key,
+        out uint propertyType, [Out] byte[] buffer, ref uint bufferSize, uint flags);
+
     public event Action<IntPtr, RemoteButton, bool>? ButtonEvent;
+    public event Action? PhysicalVoiceKeyPressed;
 
     public Func<IntPtr, string, bool>? DeviceFilter { get; set; }
 
@@ -107,6 +116,23 @@ public sealed class RawInputReceiver : IDisposable
 
         try
         {
+            // ContainerId belongs to the device node, not its interface property store.
+            var instanceKey = new DEVPROPKEY
+            {
+                fmtid = new Guid("78c34fc8-104a-4aca-9ea4-524d52996e57"),
+                pid = 256 // DEVPKEY_Device_InstanceId
+            };
+            uint instanceSize = 0;
+            CM_Get_Device_Interface_Property(devicePath, ref instanceKey, out _, [], ref instanceSize, 0);
+            if (instanceSize == 0 || instanceSize > 65536) return null;
+            byte[] instanceBuffer = new byte[instanceSize];
+            if (CM_Get_Device_Interface_Property(devicePath, ref instanceKey, out uint instanceType,
+                    instanceBuffer, ref instanceSize, 0) != 0 || instanceType != 0x12)
+                return null;
+            string instanceId = Encoding.Unicode.GetString(instanceBuffer, 0, (int)instanceSize).TrimEnd('\0');
+            if (string.IsNullOrEmpty(instanceId) || CM_Locate_DevNode(out uint devInst, instanceId, 0) != 0)
+                return null;
+
             var key = new DEVPROPKEY
             {
                 fmtid = new Guid("8c7ed206-3f8a-4827-b3ab-ae9e1faefc6c"),
@@ -116,10 +142,11 @@ public sealed class RawInputReceiver : IDisposable
             uint bufferSize = 16;
             byte[] buffer = new byte[16];
             uint propType = 0;
-            uint cr = CM_Get_Device_Interface_Property(devicePath, ref key, out propType, buffer, ref bufferSize, 0);
-            if (cr == 0 && bufferSize == 16)
+            uint cr = CM_Get_DevNode_Property(devInst, ref key, out propType, buffer, ref bufferSize, 0);
+            if (cr == 0 && propType == 0x0D && bufferSize == 16)
             {
-                return new Guid(buffer);
+                var containerId = new Guid(buffer);
+                return containerId == Guid.Empty ? null : containerId;
             }
         }
         catch
@@ -188,8 +215,8 @@ public sealed class RawInputReceiver : IDisposable
         if (!string.IsNullOrEmpty(devicePath))
         {
             string upper = devicePath.ToUpperInvariant();
-            if (upper.Contains("VID_18D1") || upper.Contains("VID&000218D1") ||
-                upper.Contains("VID_2717") || upper.Contains("VID&00022717"))
+            if (upper.Contains("VID_18D1") || upper.Contains("VID&000218D1") || upper.Contains("VID&0118D1") ||
+                upper.Contains("VID_2717") || upper.Contains("VID&00022717") || upper.Contains("VID&012717"))
             {
                 return true;
             }
@@ -205,6 +232,9 @@ public sealed class RawInputReceiver : IDisposable
 
     public static bool EvaluateDeviceMatch(Guid? targetContainerId, IntPtr hDevice, string devicePath)
     {
+        // SendInput events have no physical source. Admitting them feeds our
+        // shortcut output back into the mapping pipeline indefinitely.
+        if (hDevice == IntPtr.Zero) return false;
         Guid? deviceContainerId = GetDeviceContainerId(devicePath);
 
         if (targetContainerId.HasValue)
@@ -222,12 +252,6 @@ public sealed class RawInputReceiver : IDisposable
 
         // 2. If target remote Container ID is not yet known (e.g. before pairing), only admit verified remotes
         if (IsKnownRemoteDevice(hDevice, devicePath))
-        {
-            return true;
-        }
-
-        // 3. Allow pass-through ONLY in simulated mock test environments (IntPtr.Zero and empty path)
-        if (hDevice == IntPtr.Zero && string.IsNullOrEmpty(devicePath))
         {
             return true;
         }
@@ -336,8 +360,20 @@ public sealed class RawInputReceiver : IDisposable
                 ushort vkey = (ushort)Marshal.ReadInt16(buffer, headerSize + 6);
                 bool isDown = (flags & 1) == 0;
 
-                var btn = MapVirtualKeyToRemoteButton(vkey);
-                if (btn == RemoteButton.None) return;
+                if (vkey == 0x74 && isDown)
+                {
+                    PhysicalVoiceKeyPressed?.Invoke();
+                    return;
+                }
+                if (vkey == 0x74) return; // ATVV owns voice session start/stop.
+
+                ushort makeCode = (ushort)Marshal.ReadInt16(buffer, headerSize);
+                var btn = MapVirtualKeyToRemoteButton(vkey, makeCode);
+                if (btn == RemoteButton.None)
+                {
+                    AppLogger.Info($"Unmapped remote keyboard event: VKey=0x{vkey:X2}, MakeCode=0x{(ushort)Marshal.ReadInt16(buffer, headerSize):X2}, Down={isDown}", "RawInputReceiver");
+                    return;
+                }
 
                 lock (_lock)
                 {
@@ -396,6 +432,7 @@ public sealed class RawInputReceiver : IDisposable
                 for (int i = 0; i < (int)dwCount; i++)
                 {
                     var slice = rawBytes.AsSpan(i * reportSize, reportSize);
+                    AppLogger.Debug($"Remote HID button report: {Convert.ToHexString(slice)}", "RawInputReceiver");
                     bool recognized = false;
                     List<RemoteButton> currentButtons;
                     if (G9N9NProtocol.TryParseReport(slice, out currentButtons))
@@ -449,16 +486,20 @@ public sealed class RawInputReceiver : IDisposable
         }
     }
 
-    public static RemoteButton MapVirtualKeyToRemoteButton(ushort vkey)
+    public static RemoteButton MapVirtualKeyToRemoteButton(ushort vkey, ushort makeCode = 0)
     {
+        // Captured Xiaomi RC003 Windows reports: power has no assigned VKey.
+        if (vkey == 0xFF && makeCode == 0x5E) return RemoteButton.Power;
         return vkey switch
         {
+            0xC0 => RemoteButton.LiveTv,       // Xiaomi TV key (HID keyboard usage 0x35)
             0x26 => RemoteButton.Up,           // VK_UP
             0x28 => RemoteButton.Down,         // VK_DOWN
             0x25 => RemoteButton.Left,         // VK_LEFT
             0x27 => RemoteButton.Right,        // VK_RIGHT
             0x0D => RemoteButton.Ok,           // VK_RETURN
             0x1B => RemoteButton.Back,         // VK_ESCAPE
+            0xA6 => RemoteButton.Back,         // VK_BROWSER_BACK
             0x24 => RemoteButton.Home,         // VK_HOME
             0xAC => RemoteButton.Home,         // VK_BROWSER_HOME
             0x12 => RemoteButton.Menu,         // VK_MENU

@@ -77,12 +77,12 @@
                         <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10">
                             <TextBlock Text="微信输入法" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}"/>
                             <Border Background="#1B4D2B" CornerRadius="10" Padding="8,2" HorizontalAlignment="Right">
-                                <TextBlock Text="推荐 · Ctrl+Win" FontSize="11" Foreground="#44FF88"/>
+                                <TextBlock Text="推荐 · Ctrl+F5" FontSize="11" Foreground="#44FF88"/>
                             </Border>
                         </DockPanel>
                         <Button DockPanel.Dock="Bottom" Content="选择并应用" Padding="14,7" Background="#007ACC" HorizontalAlignment="Left"
                                 Command="{Binding ApplyPresetCommand}" CommandParameter="WeChatInput"/>
-                        <TextBlock Text="原生支持长按快捷键说话，松开后自动识别并上屏。推荐设置触发模式为【按住说话】。"
+                        <TextBlock Text="请将微信输入法的语音快捷键也设置为 Ctrl+F5。按住说话，松开后识别并上屏。"
                                    FontSize="12" Foreground="{StaticResource SecondaryTextBrush}" TextWrapping="Wrap" Margin="0,0,0,14"/>
                     </DockPanel>
                 </Border>

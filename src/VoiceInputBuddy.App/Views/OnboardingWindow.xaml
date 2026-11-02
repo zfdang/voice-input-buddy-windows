@@ -6,6 +6,7 @@
         xmlns:vm="clr-namespace:VoiceInputBuddy.App.ViewModels"
         mc:Ignorable="d"
         Title="设置向导 - Voice Input Buddy" Height="600" Width="800"
+        Icon="/Resources/app.ico"
         ResizeMode="NoResize" WindowStartupLocation="CenterScreen"
         Background="{StaticResource PrimaryBackgroundBrush}">
     <Grid Margin="24">

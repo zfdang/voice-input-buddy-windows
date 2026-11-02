@@ -102,9 +102,10 @@ public enum VoiceTriggerMode
 
 public class InputToolConfig
 {
+    public const string DefaultWeChatShortcut = "Ctrl+F5";
     public TargetInputTool Tool { get; set; } = TargetInputTool.WeChatInput;
     public VoiceTriggerMode TriggerMode { get; set; } = VoiceTriggerMode.HoldToTalk;
-    public string Shortcut { get; set; } = "Ctrl+Win";
+    public string Shortcut { get; set; } = DefaultWeChatShortcut;
     public string PreferredAudioInputDevice { get; set; } = "CABLE Output";
 }
 

@@ -66,7 +66,7 @@ public class ConvertersAndViewModelTests
         // Apply WeChat
         vm.ApplyPreset("WeChatInput");
         Assert.Equal(TargetInputTool.WeChatInput, vm.SelectedTool);
-        Assert.Equal("Ctrl+Win", vm.ShortcutText);
+        Assert.Equal("Ctrl+F5", vm.ShortcutText);
         Assert.Equal(VoiceTriggerMode.HoldToTalk, vm.TriggerMode);
         Assert.True(vm.IsHoldToTalk);
         Assert.False(vm.IsClickToToggle);

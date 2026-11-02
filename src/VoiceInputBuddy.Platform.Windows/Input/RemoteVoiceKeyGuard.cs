@@ -9,7 +9,7 @@ namespace VoiceInputBuddy.Platform.Windows.Input;
 /// <summary>Stops a verified remote's held F5 from contaminating its IME chord.</summary>
 public sealed class RemoteVoiceKeyGuard(Func<bool> voiceSessionActive) : IDisposable
 {
-    private const long MaxHoldDurationMs = 5000; // 5s safety timeout to prevent permanent suppression
+    private const long MaxHoldDurationMs = 5000; // Expire a stale hold once the voice session is no longer active.
 
     private delegate IntPtr HookProc(int code, IntPtr message, IntPtr data);
     private IntPtr _hook;
@@ -87,7 +87,7 @@ public sealed class RemoteVoiceKeyGuard(Func<bool> voiceSessionActive) : IDispos
                     // can release the injected hold before our balanced key-up.
                     if (_ownsF5)
                     {
-                        if ((Environment.TickCount64 - _holdStartedAt) > MaxHoldDurationMs)
+                        if ((Environment.TickCount64 - _holdStartedAt) > MaxHoldDurationMs && !voiceSessionActive())
                         {
                             _ownsF5 = false;
                         }

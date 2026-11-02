@@ -65,9 +65,15 @@ public partial class DevicesViewModel : ObservableObject
             DiscoveredDevices.Add(dev);
         }
 
+        _selectedDevice = DiscoveredDevices.FirstOrDefault(d => d.Id == _config.Current.SelectedDeviceId);
+        if (_selectedDevice != null)
+        {
+            _bt.CurrentGain = _selectedDevice.Gain;
+        }
+
         _bt.DeviceDiscovered += (dev) =>
         {
-            App.Current?.Dispatcher?.Invoke(() =>
+            App.Current?.Dispatcher?.BeginInvoke(() =>
             {
                 var existing = DiscoveredDevices.FirstOrDefault(d => d.BluetoothAddress == dev.BluetoothAddress);
                 if (existing == null)
@@ -84,7 +90,7 @@ public partial class DevicesViewModel : ObservableObject
 
         _bt.ConnectionStatusChanged += (connected, name) =>
         {
-            App.Current?.Dispatcher?.Invoke(() =>
+            App.Current?.Dispatcher?.BeginInvoke(() =>
             {
                 OnPropertyChanged(nameof(ConnectedDeviceName));
                 OnPropertyChanged(nameof(IsConnected));
@@ -120,10 +126,11 @@ public partial class DevicesViewModel : ObservableObject
     public async Task ConnectDeviceAsync(RemoteDevice? device)
     {
         if (device == null) return;
-        SelectedDevice = device;
         bool ok = await _bt.ConnectAsync(device.BluetoothAddress);
         if (ok)
         {
+            SelectedDevice = device;
+            _bt.CurrentGain = device.Gain;
             device.IsConnected = true;
             device.ContainerId = _bt.ConnectedDeviceContainerId;
             if (device.Mappings == null || device.Mappings.Count == 0)
@@ -177,6 +184,7 @@ public partial class DevicesViewModel : ObservableObject
     public void SaveGain(RemoteDevice? device)
     {
         if (device == null) return;
+        _bt.CurrentGain = device.Gain;
         _config.Save();
     }
 
@@ -184,6 +192,7 @@ public partial class DevicesViewModel : ObservableObject
     {
         if (value != null)
         {
+            _bt.CurrentGain = value.Gain;
             _config.Current.SelectedDeviceId = value.Id;
             if (value.Mappings == null || value.Mappings.Count == 0)
             {
@@ -247,9 +256,12 @@ public partial class MappingItemViewModel : ObservableObject
     public static ButtonActionType[] AvailableLongPressActions { get; } =
         [ButtonActionType.None, ButtonActionType.ContinuousRepeat];
 
-    public MappingItemViewModel(ButtonMapping source)
+    private readonly Action? _onModified;
+
+    public MappingItemViewModel(ButtonMapping source, Action? onModified = null)
     {
         Source = source;
+        _onModified = onModified;
         ClickAction = source.ClickAction;
         ClickShortcut = source.ClickShortcut ?? string.Empty;
         ClickMedia = source.ClickMedia != MediaCommand.None ? source.ClickMedia : MediaCommand.PlayPause;
@@ -279,6 +291,27 @@ public partial class MappingItemViewModel : ObservableObject
         {
             ParameterText = ClickShortcut;
         }
+
+        ApplyBack();
+        _onModified?.Invoke();
+    }
+
+    partial void OnParameterTextChanged(string value)
+    {
+        ApplyBack();
+        _onModified?.Invoke();
+    }
+
+    partial void OnClickMediaChanged(MediaCommand value)
+    {
+        ApplyBack();
+        _onModified?.Invoke();
+    }
+
+    partial void OnLongPressActionChanged(ButtonActionType value)
+    {
+        ApplyBack();
+        _onModified?.Invoke();
     }
 
     public void ApplyBack()
@@ -434,11 +467,23 @@ public partial class MappingViewModel : ObservableObject
             {
                 var mapping = selectedDev.Mappings.FirstOrDefault(m => m.Button == button)
                     ?? new ButtonMapping { Button = button, ClickAction = ButtonActionType.None };
-                CurrentMappings.Add(new MappingItemViewModel(mapping));
+                CurrentMappings.Add(new MappingItemViewModel(mapping, OnMappingItemModified));
             }
             _drafts[selectedDev.Id] = CurrentMappings.ToList();
         }
         SelectedMapping = CurrentMappings.FirstOrDefault();
+    }
+
+    private void OnMappingItemModified()
+    {
+        var selectedDev = SelectedDevice;
+        if (selectedDev != null)
+        {
+            var visibleButtons = CurrentMappings.Select(i => i.Button).ToHashSet();
+            selectedDev.Mappings = selectedDev.Mappings.Where(m => !visibleButtons.Contains(m.Button))
+                .Concat(CurrentMappings.Select(i => i.Source)).ToList();
+            _config.Save();
+        }
     }
 
     [RelayCommand]
@@ -471,6 +516,11 @@ public partial class IntegrationsViewModel : ObservableObject
 
     [ObservableProperty]
     private string _shortcutText = string.Empty;
+
+    partial void OnShortcutTextChanged(string value)
+    {
+        OnPropertyChanged(nameof(CurrentShortcutDisplay));
+    }
 
     [ObservableProperty]
     private bool _saveNoticeVisible;

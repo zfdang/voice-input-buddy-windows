@@ -1,6 +1,8 @@
 // Copyright (C) 2026 Voice Input Buddy Contributors
 // SPDX-License-Identifier: GPL-3.0-only
 
+using CommunityToolkit.Mvvm.ComponentModel;
+
 namespace VoiceInputBuddy.Core.Models;
 
 public enum RemoteModelType
@@ -13,17 +15,34 @@ public enum RemoteModelType
     GoogleGY3LE
 }
 
-public class RemoteDevice
+public partial class RemoteDevice : ObservableObject
 {
-    public string Id { get; set; } = string.Empty;
-    public ulong BluetoothAddress { get; set; }
-    public Guid? ContainerId { get; set; }
-    public string Name { get; set; } = string.Empty;
-    public RemoteModelType ModelType { get; set; } = RemoteModelType.Unknown;
-    public bool IsConnected { get; set; }
-    public int BatteryLevel { get; set; } = -1;
-    public float Gain { get; set; } = 1.0f;
-    public List<ButtonMapping> Mappings { get; set; } = CreateDefaultMappings(RemoteModelType.Unknown);
+    [ObservableProperty]
+    private string _id = string.Empty;
+
+    [ObservableProperty]
+    private ulong _bluetoothAddress;
+
+    [ObservableProperty]
+    private Guid? _containerId;
+
+    [ObservableProperty]
+    private string _name = string.Empty;
+
+    [ObservableProperty]
+    private RemoteModelType _modelType = RemoteModelType.Unknown;
+
+    [ObservableProperty]
+    private bool _isConnected;
+
+    [ObservableProperty]
+    private int _batteryLevel = -1;
+
+    [ObservableProperty]
+    private float _gain = 1.0f;
+
+    [ObservableProperty]
+    private List<ButtonMapping> _mappings = CreateDefaultMappings(RemoteModelType.Unknown);
 
     public static List<ButtonMapping> CreateDefaultMappings(RemoteModelType type)
     {
@@ -51,6 +70,16 @@ public class RemoteDevice
         Add(RemoteButton.VolumeDown, ButtonActionType.MediaControl, media: MediaCommand.VolumeDown);
         Add(RemoteButton.Mute, ButtonActionType.MediaControl, media: MediaCommand.Mute);
         Add(RemoteButton.PlayPause, ButtonActionType.MediaControl, media: MediaCommand.PlayPause);
+        Add(RemoteButton.Menu, ButtonActionType.KeyboardShortcut, shortcut: "Apps");
+        Add(RemoteButton.LiveTv, ButtonActionType.None);
+        Add(RemoteButton.Power, ButtonActionType.None);
+
+        if (type is RemoteModelType.GoogleG9N9N or RemoteModelType.GoogleGY3LE)
+        {
+            Add(RemoteButton.YouTube, ButtonActionType.None);
+            Add(RemoteButton.Netflix, ButtonActionType.None);
+            Add(RemoteButton.Input, ButtonActionType.None);
+        }
 
         return list;
     }

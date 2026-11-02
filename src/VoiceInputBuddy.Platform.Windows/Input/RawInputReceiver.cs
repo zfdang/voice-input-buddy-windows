@@ -113,13 +113,25 @@ public sealed class RawInputReceiver : IDisposable
     private IntPtr _hwnd;
     private bool _isRegistered;
     private readonly Dictionary<IntPtr, string> _devicePathCache = new();
-    private readonly Dictionary<IntPtr, HashSet<RemoteButton>> _devicePressedButtons = new();
+    private readonly Dictionary<IntPtr, Dictionary<byte, HashSet<RemoteButton>>> _deviceReportButtons = new();
     private readonly object _lock = new();
 
     public static Guid? GetDeviceContainerId(string devicePath)
     {
         if (string.IsNullOrEmpty(devicePath)) return null;
-        return _containerIdCache.GetOrAdd(devicePath, ResolveDeviceContainerIdInternal);
+
+        if (_containerIdCache.TryGetValue(devicePath, out var cached) && cached.HasValue)
+        {
+            return cached;
+        }
+
+        var resolved = ResolveDeviceContainerIdInternal(devicePath);
+        if (resolved.HasValue)
+        {
+            _containerIdCache[devicePath] = resolved;
+        }
+
+        return resolved;
     }
 
     private static Guid? ResolveDeviceContainerIdInternal(string devicePath)
@@ -174,19 +186,28 @@ public sealed class RawInputReceiver : IDisposable
         {
             if (hDevice.HasValue)
             {
-                if (_devicePressedButtons.TryGetValue(hDevice.Value, out var btns))
+                if (_deviceReportButtons.TryGetValue(hDevice.Value, out var reportMap))
                 {
-                    foreach (var btn in btns) releasesToDispatch.Add((hDevice.Value, btn));
-                    btns.Clear();
+                    foreach (var (_, btns) in reportMap)
+                    {
+                        foreach (var btn in btns) releasesToDispatch.Add((hDevice.Value, btn));
+                        btns.Clear();
+                    }
+                    _deviceReportButtons.Remove(hDevice.Value);
                 }
+                _devicePathCache.Remove(hDevice.Value);
             }
             else
             {
-                foreach (var (dev, btns) in _devicePressedButtons)
+                foreach (var (dev, reportMap) in _deviceReportButtons)
                 {
-                    foreach (var btn in btns) releasesToDispatch.Add((dev, btn));
+                    foreach (var (_, btns) in reportMap)
+                    {
+                        foreach (var btn in btns) releasesToDispatch.Add((dev, btn));
+                    }
                 }
-                _devicePressedButtons.Clear();
+                _deviceReportButtons.Clear();
+                _devicePathCache.Clear();
             }
         }
 
@@ -380,10 +401,13 @@ public sealed class RawInputReceiver : IDisposable
             string devicePath;
             lock (_lock)
             {
-                if (!_devicePathCache.TryGetValue(hDevice, out var path))
+                if (!_devicePathCache.TryGetValue(hDevice, out var path) || string.IsNullOrEmpty(path))
                 {
                     path = GetDevicePath(hDevice) ?? string.Empty;
-                    _devicePathCache[hDevice] = path;
+                    if (!string.IsNullOrEmpty(path))
+                    {
+                        _devicePathCache[hDevice] = path;
+                    }
                 }
                 devicePath = path;
             }
@@ -421,16 +445,21 @@ public sealed class RawInputReceiver : IDisposable
                 bool dispatchKeyboard = false;
                 lock (_lock)
                 {
-                    if (!_devicePressedButtons.TryGetValue(hDevice, out var pressedButtons))
+                    if (!_deviceReportButtons.TryGetValue(hDevice, out var reportMap))
+                    {
+                        reportMap = new Dictionary<byte, HashSet<RemoteButton>>();
+                        _deviceReportButtons[hDevice] = reportMap;
+                    }
+
+                    if (!reportMap.TryGetValue(0, out var pressedButtons))
                     {
                         pressedButtons = new HashSet<RemoteButton>();
-                        _devicePressedButtons[hDevice] = pressedButtons;
+                        reportMap[0] = pressedButtons;
                     }
 
                     if (isDown)
                     {
-                        pressedButtons.Add(btn);
-                        dispatchKeyboard = true;
+                        dispatchKeyboard = pressedButtons.Add(btn);
                     }
                     else
                     {
@@ -467,10 +496,10 @@ public sealed class RawInputReceiver : IDisposable
 
             lock (_lock)
             {
-                if (!_devicePressedButtons.TryGetValue(hDevice, out var pressedButtons))
+                if (!_deviceReportButtons.TryGetValue(hDevice, out var reportMap))
                 {
-                    pressedButtons = new HashSet<RemoteButton>();
-                    _devicePressedButtons[hDevice] = pressedButtons;
+                    reportMap = new Dictionary<byte, HashSet<RemoteButton>>();
+                    _deviceReportButtons[hDevice] = reportMap;
                 }
 
                 for (int i = 0; i < (int)dwCount; i++)
@@ -493,9 +522,16 @@ public sealed class RawInputReceiver : IDisposable
                         continue;
                     }
 
+                    byte reportId = GetReportId(slice);
+                    if (!reportMap.TryGetValue(reportId, out var pressedButtons))
+                    {
+                        pressedButtons = new HashSet<RemoteButton>();
+                        reportMap[reportId] = pressedButtons;
+                    }
+
                     var currentReportButtons = new HashSet<RemoteButton>(currentButtons);
 
-                    // 1. Released buttons -> KeyUp (false)
+                    // 1. Released buttons for this specific report ID -> KeyUp (false)
                     var released = new List<RemoteButton>();
                     foreach (var btn in pressedButtons)
                     {
@@ -532,6 +568,19 @@ public sealed class RawInputReceiver : IDisposable
         {
             Marshal.FreeHGlobal(buffer);
         }
+    }
+
+    private static byte GetReportId(ReadOnlySpan<byte> slice)
+    {
+        if (slice.Length % 2 != 0 && slice.Length > 1)
+        {
+            return slice[0];
+        }
+        if (slice.Length >= 3 && (slice[0] == 1 || slice[0] == 2))
+        {
+            return slice[0];
+        }
+        return 0;
     }
 
     public static RemoteButton MapVirtualKeyToRemoteButton(ushort vkey, ushort makeCode = 0)
@@ -587,7 +636,7 @@ public sealed class RawInputReceiver : IDisposable
 
         lock (_lock)
         {
-            _devicePressedButtons.Clear();
+            _deviceReportButtons.Clear();
             _devicePathCache.Clear();
         }
     }

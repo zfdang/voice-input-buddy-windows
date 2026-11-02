@@ -108,16 +108,21 @@ public static class G9N9NProtocol
         if (slice.Length < 2) return false;
 
         int usableLength = slice.Length - (slice.Length % 2);
+        bool hasNonZero = false;
         for (int i = 0; i < usableLength; i += 2)
         {
             ushort usage = (ushort)(slice[i] | (slice[i + 1] << 8));
-            if (usage != 0 && ConsumerButtons.TryGetValue(usage, out var btn))
+            if (usage != 0)
             {
-                buttons.Add(btn);
+                hasNonZero = true;
+                if (ConsumerButtons.TryGetValue(usage, out var btn))
+                {
+                    buttons.Add(btn);
+                }
             }
         }
 
-        return true;
+        return buttons.Count > 0 || !hasNonZero;
     }
 
     public static bool TryParseReport(ReadOnlySpan<byte> data, out List<RemoteButton> buttons)
@@ -263,8 +268,8 @@ public static class XiaomiProtocol
         if (data.IsEmpty) return false;
 
         ReadOnlySpan<byte> slice = data;
-        // If has report ID 1 and odd length, skip report ID
-        if (slice.Length > 1 && slice.Length % 2 != 0 && slice[0] == 1)
+        // If odd length, first byte is report ID (1, 2, etc.)
+        if (slice.Length > 1 && slice.Length % 2 != 0)
         {
             slice = slice[1..];
         }

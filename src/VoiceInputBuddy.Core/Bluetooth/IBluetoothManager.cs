@@ -19,6 +19,7 @@ public interface IBluetoothManager : IDisposable
     bool IsConnected { get; }
     bool IsReady { get; }
     bool IsStreaming { get; }
+    float CurrentGain { get; set; }
     BluetoothSessionState SessionState { get; }
     string ConnectedDeviceName { get; }
     Guid? ConnectedDeviceContainerId { get; }

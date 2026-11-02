@@ -65,8 +65,9 @@ public partial class RemoteDevice : ObservableObject
         Add(RemoteButton.Right, ButtonActionType.KeyboardShortcut, shortcut: "Right");
         Add(RemoteButton.Ok, ButtonActionType.KeyboardShortcut, shortcut: "Enter");
         Add(RemoteButton.Back, ButtonActionType.KeyboardShortcut, shortcut: "Escape");
+        bool isGoogle = type is RemoteModelType.GoogleG9N9N or RemoteModelType.GoogleGY3LE;
         bool isRc003 = type == RemoteModelType.XiaomiRC003;
-        Add(RemoteButton.Home, ButtonActionType.KeyboardShortcut, shortcut: isRc003 ? "Win+Tab" : "Alt+Tab");
+        Add(RemoteButton.Home, ButtonActionType.KeyboardShortcut, shortcut: isGoogle ? "Alt+Tab" : "Win+Tab");
         Add(RemoteButton.VolumeUp, ButtonActionType.MediaControl, media: MediaCommand.VolumeUp);
         Add(RemoteButton.VolumeDown, ButtonActionType.MediaControl, media: MediaCommand.VolumeDown);
         Add(RemoteButton.Mute, ButtonActionType.MediaControl, media: MediaCommand.Mute);
@@ -75,8 +76,8 @@ public partial class RemoteDevice : ObservableObject
             shortcut: isRc003 ? null : "Apps");
         Add(RemoteButton.LiveTv, isRc003 ? ButtonActionType.MediaControl : ButtonActionType.None,
             media: isRc003 ? MediaCommand.PlayPause : MediaCommand.None);
-        Add(RemoteButton.Power, isRc003 ? ButtonActionType.KeyboardShortcut : ButtonActionType.None,
-            shortcut: isRc003 ? "Backspace" : null);
+        Add(RemoteButton.Power, isGoogle ? ButtonActionType.None : ButtonActionType.KeyboardShortcut,
+            shortcut: isGoogle ? null : "Backspace");
 
         if (type is RemoteModelType.GoogleG9N9N or RemoteModelType.GoogleGY3LE)
         {

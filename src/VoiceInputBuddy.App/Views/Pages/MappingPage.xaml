@@ -50,10 +50,10 @@
                     <!-- Visual Remote Control Body -->
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <StackPanel HorizontalAlignment="Center">
-                            <Border Background="#242629" BorderBrush="#3E4249" BorderThickness="1" CornerRadius="28" Padding="14,18" Width="210">
+                            <Border Background="#242629" BorderBrush="#3E4249" BorderThickness="1" CornerRadius="28" Padding="14,10" Width="210">
                                 <StackPanel>
                                     <!-- Top Row: Power & Voice -->
-                                    <Grid Margin="0,0,0,18">
+                                    <Grid Margin="0,0,0,8">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="*"/>
@@ -66,37 +66,37 @@
                                     </Grid>
 
                                     <!-- Directional Ring (D-Pad) -->
-                                    <Border Background="#1C1D20" BorderBrush="#383B42" BorderThickness="1" CornerRadius="75" Width="150" Height="150" Margin="0,0,0,18">
+                                    <Border Background="#1C1D20" BorderBrush="#383B42" BorderThickness="1" CornerRadius="64" Width="128" Height="128" Margin="0,0,0,8">
                                         <Grid>
                                             <!-- Up -->
                                             <Button Content="▲" Tag="Up" Click="SelectRemoteButton"
-                                                    HorizontalAlignment="Center" VerticalAlignment="Top" Width="42" Height="36" Margin="0,6,0,0"/>
+                                                    HorizontalAlignment="Center" VerticalAlignment="Top" Width="38" Height="30" Margin="0,5,0,0"/>
                                             <!-- Down -->
                                             <Button Content="▼" Tag="Down" Click="SelectRemoteButton"
-                                                    HorizontalAlignment="Center" VerticalAlignment="Bottom" Width="42" Height="36" Margin="0,0,0,6"/>
+                                                    HorizontalAlignment="Center" VerticalAlignment="Bottom" Width="38" Height="30" Margin="0,0,0,5"/>
                                             <!-- Left -->
                                             <Button Content="◀" Tag="Left" Click="SelectRemoteButton"
-                                                    HorizontalAlignment="Left" VerticalAlignment="Center" Width="36" Height="42" Margin="6,0,0,0"/>
+                                                    HorizontalAlignment="Left" VerticalAlignment="Center" Width="30" Height="38" Margin="5,0,0,0"/>
                                             <!-- Right -->
                                             <Button Content="▶" Tag="Right" Click="SelectRemoteButton"
-                                                    HorizontalAlignment="Right" VerticalAlignment="Center" Width="36" Height="42" Margin="0,0,6,0"/>
+                                                    HorizontalAlignment="Right" VerticalAlignment="Center" Width="30" Height="38" Margin="0,0,5,0"/>
                                             <!-- OK / Center -->
                                             <Button Content="OK" Tag="Ok" Click="SelectRemoteButton"
-                                                    HorizontalAlignment="Center" VerticalAlignment="Center" Width="52" Height="52"
+                                                    HorizontalAlignment="Center" VerticalAlignment="Center" Width="46" Height="46"
                                                     FontWeight="Bold" Background="#383A40"/>
                                         </Grid>
                                     </Border>
 
                                     <!-- Navigation Keys Grid -->
-                                    <Grid Margin="0,0,0,10">
+                                    <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="*"/>
                                         </Grid.ColumnDefinitions>
                                         <Grid.RowDefinitions>
-                                            <RowDefinition Height="38"/>
-                                            <RowDefinition Height="38"/>
-                                            <RowDefinition Height="38"/>
+                                            <RowDefinition Height="34"/>
+                                            <RowDefinition Height="34"/>
+                                            <RowDefinition Height="34"/>
                                         </Grid.RowDefinitions>
 
                                         <!-- Row 0: Back & Volume Up -->
@@ -115,7 +115,7 @@
                             </Border>
 
                             <!-- Button Quick Picker Dropdown -->
-                            <StackPanel Margin="0,14,0,0">
+                            <StackPanel Margin="0,8,0,0">
                                 <TextBlock Text="按键快速选择：" FontSize="11" Foreground="{StaticResource SecondaryTextBrush}" Margin="0,0,0,4"/>
                                 <ComboBox ItemsSource="{Binding CurrentMappings}" SelectedItem="{Binding SelectedMapping}" DisplayMemberPath="ButtonName"/>
                             </StackPanel>
@@ -156,10 +156,10 @@
 
                                 <!-- Keyboard Shortcut Input -->
                                 <StackPanel Visibility="{Binding TextOrShortcutVisibility}">
-                                    <TextBlock Text="目标键盘快捷键：" FontSize="13" Foreground="{StaticResource PrimaryTextBrush}" Margin="0,0,0,6"/>
+                                    <TextBlock Text="{Binding ParameterLabel}" FontSize="13" Foreground="{StaticResource PrimaryTextBrush}" Margin="0,0,0,6"/>
                                     <TextBox Text="{Binding ParameterText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
                                              Background="#1E1E1E" Foreground="#FFF" Padding="10,7" Margin="0,0,0,6"/>
-                                    <TextBlock Text="提示: 支持组合键，如 'Ctrl+Alt+A'、'Enter'、'Escape'、'Up'、'Alt+Tab'、'Win+D' 等。"
+                                    <TextBlock Text="{Binding ParameterHint}" TextWrapping="Wrap"
                                                FontSize="11" Foreground="{StaticResource SecondaryTextBrush}" Margin="0,0,0,10"/>
                                 </StackPanel>
 

@@ -21,6 +21,8 @@ public class NativeInputSenderTests
     [InlineData("RCtrl+RAlt+V", new ushort[] { 0xA3, 0xA5 }, (ushort)'V')]
     [InlineData("LShift+RShift", new ushort[] { 0xA0, 0xA1 }, (ushort)0)]
     [InlineData("Win+F5", new ushort[] { 0x5B }, (ushort)0x74)]
+    [InlineData("Win+Tab", new ushort[] { 0x5B }, (ushort)0x09)]
+    [InlineData("Backspace", new ushort[] { }, (ushort)0x08)]
     [InlineData("RWin+Space", new ushort[] { 0x5C }, (ushort)0x20)]
     [InlineData("Up", new ushort[] { }, (ushort)0x26)]
     [InlineData("Down", new ushort[] { }, (ushort)0x28)]

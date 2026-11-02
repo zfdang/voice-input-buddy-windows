@@ -45,6 +45,21 @@ public sealed class RawInputReceiver : IDisposable
         public uint dwCount;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RAWKEYBOARD
+    {
+        public ushort MakeCode;
+        public ushort Flags;
+        public ushort Reserved;
+        public ushort VKey;
+        public uint Message;
+        public uint ExtraInformation;
+    }
+
+    private const uint RIM_TYPEMOUSE = 0;
+    private const uint RIM_TYPEKEYBOARD = 1;
+    private const uint RIM_TYPEHID = 2;
+
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool RegisterRawInputDevices(
         [In] RAWINPUTDEVICE[] pRawInputDevices,
@@ -237,6 +252,46 @@ public sealed class RawInputReceiver : IDisposable
             }
 
             int headerSize = Marshal.SizeOf<RAWINPUTHEADER>();
+
+            if (header.dwType == RIM_TYPEKEYBOARD)
+            {
+                if ((int)dwSize < headerSize + Marshal.SizeOf<RAWKEYBOARD>()) return;
+
+                ushort flags = (ushort)Marshal.ReadInt16(buffer, headerSize + 2);
+                ushort vkey = (ushort)Marshal.ReadInt16(buffer, headerSize + 6);
+                bool isDown = (flags & 1) == 0;
+
+                var btn = MapVirtualKeyToRemoteButton(vkey);
+                if (btn == RemoteButton.None) return;
+
+                lock (_lock)
+                {
+                    if (!_devicePressedButtons.TryGetValue(hDevice, out var pressedButtons))
+                    {
+                        pressedButtons = new HashSet<RemoteButton>();
+                        _devicePressedButtons[hDevice] = pressedButtons;
+                    }
+
+                    if (isDown)
+                    {
+                        if (pressedButtons.Add(btn))
+                        {
+                            ButtonEvent?.Invoke(hDevice, btn, true);
+                        }
+                    }
+                    else
+                    {
+                        if (pressedButtons.Remove(btn))
+                        {
+                            ButtonEvent?.Invoke(hDevice, btn, false);
+                        }
+                    }
+                }
+                return;
+            }
+
+            if (header.dwType != RIM_TYPEHID) return;
+
             int hidHeaderSize = Marshal.SizeOf<RAWHID>();
             int dataOffset = headerSize + hidHeaderSize;
 
@@ -313,6 +368,28 @@ public sealed class RawInputReceiver : IDisposable
         {
             Marshal.FreeHGlobal(buffer);
         }
+    }
+
+    public static RemoteButton MapVirtualKeyToRemoteButton(ushort vkey)
+    {
+        return vkey switch
+        {
+            0x26 => RemoteButton.Up,           // VK_UP
+            0x28 => RemoteButton.Down,         // VK_DOWN
+            0x25 => RemoteButton.Left,         // VK_LEFT
+            0x27 => RemoteButton.Right,        // VK_RIGHT
+            0x0D => RemoteButton.Ok,           // VK_RETURN
+            0x1B => RemoteButton.Back,         // VK_ESCAPE
+            0x24 => RemoteButton.Home,         // VK_HOME
+            0xAC => RemoteButton.Home,         // VK_BROWSER_HOME
+            0x12 => RemoteButton.Menu,         // VK_MENU
+            0x5D => RemoteButton.Menu,         // VK_APPS
+            0xAF => RemoteButton.VolumeUp,     // VK_VOLUME_UP
+            0xAE => RemoteButton.VolumeDown,   // VK_VOLUME_DOWN
+            0xAD => RemoteButton.Mute,         // VK_VOLUME_MUTE
+            0xB3 => RemoteButton.PlayPause,    // VK_MEDIA_PLAY_PAUSE
+            _ => RemoteButton.None
+        };
     }
 
     public void Dispose()

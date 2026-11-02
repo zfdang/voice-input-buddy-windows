@@ -70,6 +70,8 @@ public partial class App : Application
         finally
         {
             _mainViewModel.ActiveOnboardingVm = null;
+            _mainViewModel.IntegrationsVm.Reload();
+            _mainViewModel.MappingVm.LoadMappings();
         }
     }
 

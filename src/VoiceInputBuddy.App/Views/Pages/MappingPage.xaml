@@ -32,10 +32,16 @@
                                         <TextBlock Text="动作: " Foreground="{StaticResource SecondaryTextBrush}" VerticalAlignment="Center" Margin="0,0,4,0"/>
                                         <ComboBox ItemsSource="{x:Static vm:MappingItemViewModel.AvailableActions}" SelectedItem="{Binding ClickAction, Mode=TwoWay}" Width="120"/>
                                     </StackPanel>
-                                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,10,0">
-                                        <TextBlock Text="参数: " Foreground="{StaticResource SecondaryTextBrush}" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                                        <TextBox Text="{Binding ClickShortcut, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="130" Background="#1E1E1E" Foreground="#FFF" Padding="4,2"/>
-                                    </StackPanel>
+                                    <Grid Grid.Column="2" VerticalAlignment="Center" Margin="0,0,10,0">
+                                        <StackPanel Orientation="Horizontal" Visibility="{Binding TextOrShortcutVisibility}">
+                                            <TextBlock Text="参数: " Foreground="{StaticResource SecondaryTextBrush}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                            <TextBox Text="{Binding ParameterText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="130" Background="#1E1E1E" Foreground="#FFF" Padding="4,2"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Visibility="{Binding MediaVisibility}">
+                                            <TextBlock Text="媒体: " Foreground="{StaticResource SecondaryTextBrush}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                            <ComboBox ItemsSource="{x:Static vm:MappingItemViewModel.AvailableMediaCommands}" SelectedItem="{Binding ClickMedia, Mode=TwoWay}" Width="130"/>
+                                        </StackPanel>
+                                    </Grid>
                                     <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
                                         <TextBlock Text="长按: " Foreground="{StaticResource SecondaryTextBrush}" VerticalAlignment="Center" Margin="0,0,4,0"/>
                                         <ComboBox ItemsSource="{x:Static vm:MappingItemViewModel.AvailableLongPressActions}" SelectedItem="{Binding LongPressAction, Mode=TwoWay}" Width="120"/>

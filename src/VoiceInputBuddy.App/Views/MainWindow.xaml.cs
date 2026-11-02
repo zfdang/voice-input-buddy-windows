@@ -39,6 +39,9 @@ public partial class MainWindow : Window
     [DllImport("user32.dll")]
     private static extern IntPtr LoadIcon(IntPtr hInstance, IntPtr lpIconName);
 
+    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+    private static extern uint RegisterWindowMessage(string lpString);
+
     private const uint NIM_ADD = 0x00000000;
     private const uint NIM_DELETE = 0x00000002;
     private const uint NIF_MESSAGE = 0x00000001;
@@ -54,6 +57,7 @@ public partial class MainWindow : Window
 
     private NOTIFYICONDATA _trayData;
     private bool _trayIconCreated = false;
+    private uint _wmTaskbarCreated = 0;
     public bool IsExplicitExit { get; set; } = false;
 
     private DevicesPage? _devicesPage;
@@ -78,6 +82,7 @@ public partial class MainWindow : Window
         {
             vm.RegisterRawInput(hwnd);
         }
+        _wmTaskbarCreated = RegisterWindowMessage("TaskbarCreated");
         HwndSource.FromHwnd(hwnd)?.AddHook(WndProc);
         InitializeTrayIcon(hwnd);
     }
@@ -105,6 +110,14 @@ public partial class MainWindow : Window
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
+        if (_wmTaskbarCreated != 0 && (uint)msg == _wmTaskbarCreated)
+        {
+            _trayIconCreated = false;
+            InitializeTrayIcon(hwnd);
+            handled = true;
+            return IntPtr.Zero;
+        }
+
         if (msg == WM_INPUT && DataContext is MainViewModel vm)
         {
             vm.ProcessRawInput(lParam);

@@ -8,7 +8,7 @@ using VoiceInputBuddy.Platform.Windows.Input;
 
 namespace VoiceInputBuddy.App.ViewModels;
 
-public partial class MainViewModel : ObservableObject
+public partial class MainViewModel : ObservableObject, IDisposable
 {
     private record struct ActiveVoiceSession(VoiceTriggerMode TriggerMode, string Shortcut, TargetInputTool Tool);
 
@@ -18,6 +18,7 @@ public partial class MainViewModel : ObservableObject
     private ActiveVoiceSession? _activeVoiceSession;
 
     private System.Threading.Timer? _repeatTimer;
+    private int _repeatGeneration = 0;
     private RemoteButton _heldButton = RemoteButton.None;
     private ButtonMapping? _activeRepeatMapping;
 
@@ -45,7 +46,16 @@ public partial class MainViewModel : ObservableObject
     public EnvironmentViewModel EnvironmentVm { get; }
     public SettingsViewModel SettingsVm { get; }
 
-    public OnboardingViewModel? ActiveOnboardingVm { get; set; }
+    private OnboardingViewModel? _activeOnboardingVm;
+    public OnboardingViewModel? ActiveOnboardingVm
+    {
+        get => _activeOnboardingVm;
+        set
+        {
+            _activeOnboardingVm = value;
+            StopRepeatTimer();
+        }
+    }
 
     public event Action? RequestOpenOnboarding;
 
@@ -66,6 +76,10 @@ public partial class MainViewModel : ObservableObject
         {
             IsConnected = connected;
             ConnectedDeviceName = connected ? name : "未连接设备";
+            if (!connected)
+            {
+                StopRepeatTimer();
+            }
         };
 
         _bluetoothManager.AudioLevelChanged += (level) =>
@@ -112,9 +126,14 @@ public partial class MainViewModel : ObservableObject
 
     partial void OnActivePageNameChanged(string value)
     {
+        StopRepeatTimer();
         if (value == "Mapping")
         {
             MappingVm.LoadMappings();
+        }
+        else if (value == "Integrations")
+        {
+            IntegrationsVm.Reload();
         }
     }
 
@@ -177,6 +196,7 @@ public partial class MainViewModel : ObservableObject
     {
         if (ActiveOnboardingVm != null)
         {
+            StopRepeatTimer();
             if (isDown)
             {
                 ActiveOnboardingVm.NotifyButtonPressed(button);
@@ -210,12 +230,17 @@ public partial class MainViewModel : ObservableObject
                 StopRepeatTimer();
                 _heldButton = button;
                 _activeRepeatMapping = mapping;
+                var capturedMapping = mapping;
+                int currentGen = _repeatGeneration;
                 _repeatTimer = new System.Threading.Timer(_ =>
                 {
-                    if (_activeRepeatMapping != null)
+                    if (Volatile.Read(ref _repeatGeneration) != currentGen) return;
+                    if (!_bluetoothManager.IsConnected || ActiveOnboardingVm != null)
                     {
-                        ExecuteButtonAction(_activeRepeatMapping.ClickAction, _activeRepeatMapping.ClickShortcut, _activeRepeatMapping.ClickMedia, _activeRepeatMapping.ClickText);
+                        StopRepeatTimer();
+                        return;
                     }
+                    ExecuteButtonAction(capturedMapping.ClickAction, capturedMapping.ClickShortcut, capturedMapping.ClickMedia, capturedMapping.ClickText);
                 }, null, 400, 100);
             }
         }
@@ -230,6 +255,7 @@ public partial class MainViewModel : ObservableObject
 
     private void StopRepeatTimer()
     {
+        Interlocked.Increment(ref _repeatGeneration);
         _repeatTimer?.Dispose();
         _repeatTimer = null;
         _heldButton = RemoteButton.None;
@@ -265,5 +291,11 @@ public partial class MainViewModel : ObservableObject
     public void Navigate(string pageName)
     {
         ActivePageName = pageName;
+    }
+
+    public void Dispose()
+    {
+        StopRepeatTimer();
+        _rawInputReceiver.Dispose();
     }
 }

@@ -38,6 +38,8 @@ public sealed class WinRtBluetoothManager : IDisposable
     private bool _voiceSessionStartedEmitted = false;
     private int _connectionGeneration = 0;
     private int _sessionGeneration = 0;
+    private int _audioGeneration = 0;
+    private int _activeOpeningOperationId = 0;
     private TaskCompletionSource<bool>? _capabilitiesTcs;
     private TaskCompletionSource<bool>? _audioStopTcs;
     private System.Threading.Timer? _keepaliveTimer;
@@ -108,12 +110,29 @@ public sealed class WinRtBluetoothManager : IDisposable
         lock (_stateLock)
         {
             targetConnGen = ++_connectionGeneration;
+            _activeOpeningOperationId++;
+        }
+
+        void CleanupAttempt(BluetoothLEDevice? localDev)
+        {
+            localDev?.Dispose();
+            lock (_stateLock)
+            {
+                if (targetConnGen == _connectionGeneration)
+                {
+                    Disconnect();
+                }
+            }
         }
 
         try
         {
             var device = await BluetoothLEDevice.FromBluetoothAddressAsync(bluetoothAddress);
-            if (device == null) return false;
+            if (device == null)
+            {
+                CleanupAttempt(null);
+                return false;
+            }
 
             lock (_stateLock)
             {
@@ -130,26 +149,34 @@ public sealed class WinRtBluetoothManager : IDisposable
             var servicesResult = await device.GetGattServicesForUuidAsync(ATVVProtocol.ServiceUuid);
             if (servicesResult.Status != GattCommunicationStatus.Success || servicesResult.Services.Count == 0)
             {
-                Disconnect();
+                CleanupAttempt(device);
                 return false;
             }
 
             lock (_stateLock)
             {
-                if (targetConnGen != _connectionGeneration) return false;
+                if (targetConnGen != _connectionGeneration)
+                {
+                    device.Dispose();
+                    return false;
+                }
             }
 
             var service = servicesResult.Services[0];
             var charsResult = await service.GetCharacteristicsAsync();
             if (charsResult.Status != GattCommunicationStatus.Success)
             {
-                Disconnect();
+                CleanupAttempt(device);
                 return false;
             }
 
             lock (_stateLock)
             {
-                if (targetConnGen != _connectionGeneration) return false;
+                if (targetConnGen != _connectionGeneration)
+                {
+                    device.Dispose();
+                    return false;
+                }
             }
 
             GattCharacteristic? tx = null;
@@ -165,7 +192,7 @@ public sealed class WinRtBluetoothManager : IDisposable
 
             if (tx == null || audio == null || control == null)
             {
-                Disconnect();
+                CleanupAttempt(device);
                 return false;
             }
 
@@ -178,13 +205,17 @@ public sealed class WinRtBluetoothManager : IDisposable
                 GattClientCharacteristicConfigurationDescriptorValue.Notify);
             if (audioStatus != GattCommunicationStatus.Success)
             {
-                Disconnect();
+                CleanupAttempt(device);
                 return false;
             }
 
             lock (_stateLock)
             {
-                if (targetConnGen != _connectionGeneration) return false;
+                if (targetConnGen != _connectionGeneration)
+                {
+                    device.Dispose();
+                    return false;
+                }
             }
             audio.ValueChanged += OnAudioValueChanged;
 
@@ -192,13 +223,17 @@ public sealed class WinRtBluetoothManager : IDisposable
                 GattClientCharacteristicConfigurationDescriptorValue.Notify);
             if (controlStatus != GattCommunicationStatus.Success)
             {
-                Disconnect();
+                CleanupAttempt(device);
                 return false;
             }
 
             lock (_stateLock)
             {
-                if (targetConnGen != _connectionGeneration) return false;
+                if (targetConnGen != _connectionGeneration)
+                {
+                    device.Dispose();
+                    return false;
+                }
             }
             control.ValueChanged += OnControlValueChanged;
 
@@ -209,7 +244,7 @@ public sealed class WinRtBluetoothManager : IDisposable
             var writeStatus = await tx.WriteValueAsync(buffer, GattWriteOption.WriteWithoutResponse);
             if (writeStatus != GattCommunicationStatus.Success)
             {
-                Disconnect();
+                CleanupAttempt(device);
                 ConnectionStatusChanged?.Invoke(false, "下发能力协商命令失败");
                 return false;
             }
@@ -217,14 +252,18 @@ public sealed class WinRtBluetoothManager : IDisposable
             var completedTask = await Task.WhenAny(_capabilitiesTcs.Task, Task.Delay(5000));
             if (completedTask != _capabilitiesTcs.Task || !await _capabilitiesTcs.Task)
             {
-                Disconnect();
+                CleanupAttempt(device);
                 ConnectionStatusChanged?.Invoke(false, "能力协商超时或不支持 16kHz 编码");
                 return false;
             }
 
             lock (_stateLock)
             {
-                if (targetConnGen != _connectionGeneration) return false;
+                if (targetConnGen != _connectionGeneration)
+                {
+                    device.Dispose();
+                    return false;
+                }
             }
 
             // Retrieve ContainerId for device matching
@@ -250,7 +289,7 @@ public sealed class WinRtBluetoothManager : IDisposable
         }
         catch
         {
-            Disconnect();
+            CleanupAttempt(null);
             return false;
         }
     }
@@ -273,6 +312,7 @@ public sealed class WinRtBluetoothManager : IDisposable
     {
         int currentConnGen;
         int currentSessGen;
+        int opId;
         lock (_stateLock)
         {
             if (_sessionState != BluetoothSessionState.Idle || _txCharacteristic == null)
@@ -289,13 +329,17 @@ public sealed class WinRtBluetoothManager : IDisposable
             _sessionState = BluetoothSessionState.Opening;
             _cancelOpenPending = false;
             _ringBuffer.Clear();
-            lock (_audioLock)
-            {
-                _frameAccumulator.Reset();
-                _decoder.Reset();
-            }
             currentConnGen = _connectionGeneration;
             currentSessGen = ++_sessionGeneration;
+            opId = ++_activeOpeningOperationId;
+        }
+
+        // Reset audio pipeline outside _stateLock to prevent AB-BA deadlock
+        lock (_audioLock)
+        {
+            _audioGeneration++;
+            _frameAccumulator.Reset();
+            _decoder.Reset();
         }
 
         try
@@ -308,7 +352,7 @@ public sealed class WinRtBluetoothManager : IDisposable
             {
                 lock (_stateLock)
                 {
-                    if (currentConnGen == _connectionGeneration && currentSessGen == _sessionGeneration)
+                    if (currentConnGen == _connectionGeneration && currentSessGen == _sessionGeneration && opId == _activeOpeningOperationId)
                     {
                         _audioPlayer.Stop();
                         _sessionState = BluetoothSessionState.Idle;
@@ -319,14 +363,13 @@ public sealed class WinRtBluetoothManager : IDisposable
 
             lock (_stateLock)
             {
-                if (currentConnGen != _connectionGeneration || currentSessGen != _sessionGeneration)
+                if (currentConnGen != _connectionGeneration || currentSessGen != _sessionGeneration || opId != _activeOpeningOperationId)
                 {
-                    // Stale operation: a newer session or disconnect has taken over.
-                    // DO NOT clean up new session resources!
+                    // Stale operation: cancelled, disconnected, or superseded.
                     return false;
                 }
 
-                if (_cancelOpenPending)
+                if (_sessionState != BluetoothSessionState.Opening || _cancelOpenPending)
                 {
                     // Fast release occurred during await on this SAME session
                     _ = SendClosePacketAsync(_currentSessionId);
@@ -347,7 +390,7 @@ public sealed class WinRtBluetoothManager : IDisposable
         {
             lock (_stateLock)
             {
-                if (currentConnGen == _connectionGeneration && currentSessGen == _sessionGeneration)
+                if (currentConnGen == _connectionGeneration && currentSessGen == _sessionGeneration && opId == _activeOpeningOperationId)
                 {
                     _audioPlayer.Stop();
                     _sessionState = BluetoothSessionState.Idle;
@@ -367,6 +410,7 @@ public sealed class WinRtBluetoothManager : IDisposable
             if (_sessionState == BluetoothSessionState.Opening)
             {
                 _cancelOpenPending = true;
+                _activeOpeningOperationId++;
                 return true;
             }
 
@@ -398,7 +442,6 @@ public sealed class WinRtBluetoothManager : IDisposable
             if (currentConnGen != _connectionGeneration || currentSessGen != _sessionGeneration)
             {
                 // Stale stopping operation: a newer session or disconnect has taken over.
-                // Do not stop player or change state of the new session!
                 return false;
             }
 
@@ -460,8 +503,7 @@ public sealed class WinRtBluetoothManager : IDisposable
 
     private void OnAudioValueChanged(GattCharacteristic sender, GattValueChangedEventArgs args)
     {
-        int currentConnGen;
-        int currentSessGen;
+        int currentAudioGen;
         int frameSize;
         lock (_stateLock)
         {
@@ -470,22 +512,19 @@ public sealed class WinRtBluetoothManager : IDisposable
             {
                 return;
             }
-            currentConnGen = _connectionGeneration;
-            currentSessGen = _sessionGeneration;
+            currentAudioGen = _audioGeneration;
             frameSize = _frameSize;
         }
 
         CryptographicBuffer.CopyToByteArray(args.CharacteristicValue, out byte[] data);
         if (data.Length == 0) return;
 
+        // Process audio in _audioLock ONLY (never nest _stateLock inside to prevent deadlock)
         lock (_audioLock)
         {
-            lock (_stateLock)
+            if (currentAudioGen != _audioGeneration)
             {
-                if (currentConnGen != _connectionGeneration || currentSessGen != _sessionGeneration)
-                {
-                    return;
-                }
+                return;
             }
 
             var frames = _frameAccumulator.Append(data, frameSize);
@@ -510,13 +549,13 @@ public sealed class WinRtBluetoothManager : IDisposable
 
     private void OnControlValueChanged(GattCharacteristic sender, GattValueChangedEventArgs args)
     {
-        int currentConnGen;
-        int currentSessGen;
+        int capturedConnGen;
+        int capturedAudioGen;
         lock (_stateLock)
         {
             if (sender != _controlCharacteristic) return;
-            currentConnGen = _connectionGeneration;
-            currentSessGen = _sessionGeneration;
+            capturedConnGen = _connectionGeneration;
+            capturedAudioGen = _audioGeneration;
         }
 
         CryptographicBuffer.CopyToByteArray(args.CharacteristicValue, out byte[] data);
@@ -526,11 +565,16 @@ public sealed class WinRtBluetoothManager : IDisposable
         switch (opcode)
         {
             case ATVVProtocol.OpcodeCapabilitiesResp: // 0x0B
+                lock (_stateLock)
+                {
+                    if (capturedConnGen != _connectionGeneration) return;
+                }
                 var caps = ATVVProtocol.ParseCapabilities(data);
                 if (caps != null && caps.SampleRate == 16000 && (caps.Codecs & 0x02) != 0)
                 {
                     lock (_stateLock)
                     {
+                        if (capturedConnGen != _connectionGeneration) return;
                         _frameSize = caps.FrameSize > 0 ? caps.FrameSize : 120;
                     }
                     _capabilitiesTcs?.TrySetResult(true);
@@ -544,6 +588,11 @@ public sealed class WinRtBluetoothManager : IDisposable
             case ATVVProtocol.OpcodeAudioStart: // 0x04
                 if (ATVVProtocol.ParseAudioStart(data, out _, out byte codec, out byte sessionId))
                 {
+                    lock (_stateLock)
+                    {
+                        if (capturedConnGen != _connectionGeneration) return;
+                    }
+
                     // Reject non-16kHz codec (e.g. 8kHz)
                     if (codec != 0x02)
                     {
@@ -551,6 +600,7 @@ public sealed class WinRtBluetoothManager : IDisposable
                         bool shouldEmitEnded = false;
                         lock (_stateLock)
                         {
+                            if (capturedConnGen != _connectionGeneration) return;
                             _audioPlayer.Stop();
                             _sessionState = BluetoothSessionState.Idle;
                             StopKeepaliveTimer();
@@ -567,19 +617,19 @@ public sealed class WinRtBluetoothManager : IDisposable
                         return;
                     }
 
-                    // If cancelled during Opening, or already in Idle, immediately reply with MIC_CLOSE(sessionId)
-                    bool wasCancelledOrIdle = false;
+                    // If cancelled during Opening, or in Draining, or in Idle: MUST send close!
+                    bool wasCancelledOrEnded = false;
                     lock (_stateLock)
                     {
+                        if (capturedConnGen != _connectionGeneration) return;
                         _currentSessionId = sessionId;
-                        if (_cancelOpenPending || _sessionState == BluetoothSessionState.Idle)
+                        if (_cancelOpenPending || _sessionState == BluetoothSessionState.Draining || _sessionState == BluetoothSessionState.Idle)
                         {
-                            wasCancelledOrIdle = true;
-                            _cancelOpenPending = false;
+                            wasCancelledOrEnded = true;
                         }
                     }
 
-                    if (wasCancelledOrIdle)
+                    if (wasCancelledOrEnded)
                     {
                         _ = SendClosePacketAsync(sessionId);
                     }
@@ -590,6 +640,8 @@ public sealed class WinRtBluetoothManager : IDisposable
                 bool emitRefusedEnded = false;
                 lock (_stateLock)
                 {
+                    if (capturedConnGen != _connectionGeneration) return;
+                    _activeOpeningOperationId++;
                     if (_sessionState == BluetoothSessionState.Opening || _sessionState == BluetoothSessionState.Streaming)
                     {
                         StopKeepaliveTimer();
@@ -613,23 +665,25 @@ public sealed class WinRtBluetoothManager : IDisposable
                 {
                     lock (_audioLock)
                     {
-                        lock (_stateLock)
-                        {
-                            if (currentConnGen != _connectionGeneration || currentSessGen != _sessionGeneration)
-                            {
-                                return;
-                            }
-                        }
+                        if (capturedAudioGen != _audioGeneration) return;
                         _frameAccumulator.Synchronize(predictor, stepIndex);
                     }
                 }
                 break;
 
             case ATVVProtocol.OpcodeStartSearch: // 0x08
+                lock (_stateLock)
+                {
+                    if (capturedConnGen != _connectionGeneration) return;
+                }
                 _ = StartVoiceSessionAsync();
                 break;
 
             case ATVVProtocol.OpcodeAudioStop: // 0x00
+                lock (_stateLock)
+                {
+                    if (capturedConnGen != _connectionGeneration) return;
+                }
                 _audioStopTcs?.TrySetResult(true);
                 if (_sessionState == BluetoothSessionState.Streaming || _sessionState == BluetoothSessionState.Opening)
                 {
@@ -647,6 +701,7 @@ public sealed class WinRtBluetoothManager : IDisposable
         {
             _connectionGeneration++;
             _sessionGeneration++;
+            _activeOpeningOperationId++;
             if (_voiceSessionStartedEmitted)
             {
                 emitEnded = true;
@@ -656,12 +711,6 @@ public sealed class WinRtBluetoothManager : IDisposable
             _cancelOpenPending = false;
             StopKeepaliveTimer();
             _audioPlayer.Stop();
-
-            lock (_audioLock)
-            {
-                _frameAccumulator.Reset();
-                _decoder.Reset();
-            }
 
             if (_connectedDevice != null)
             {
@@ -684,6 +733,14 @@ public sealed class WinRtBluetoothManager : IDisposable
 
             _txCharacteristic = null;
             ConnectedDeviceContainerId = null;
+        }
+
+        // Reset audio pipeline outside _stateLock to prevent AB-BA deadlock
+        lock (_audioLock)
+        {
+            _audioGeneration++;
+            _frameAccumulator.Reset();
+            _decoder.Reset();
         }
 
         if (emitEnded)

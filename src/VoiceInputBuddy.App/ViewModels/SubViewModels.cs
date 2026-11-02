@@ -118,10 +118,26 @@ public partial class MappingItemViewModel : ObservableObject
     private string _clickText = string.Empty;
 
     [ObservableProperty]
+    private string _parameterText = string.Empty;
+
+    [ObservableProperty]
     private ButtonActionType _longPressAction;
+
+    public System.Windows.Visibility TextOrShortcutVisibility =>
+        (ClickAction == ButtonActionType.KeyboardShortcut || ClickAction == ButtonActionType.TextSnippet)
+            ? System.Windows.Visibility.Visible
+            : System.Windows.Visibility.Collapsed;
+
+    public System.Windows.Visibility MediaVisibility =>
+        ClickAction == ButtonActionType.MediaControl
+            ? System.Windows.Visibility.Visible
+            : System.Windows.Visibility.Collapsed;
 
     public static ButtonActionType[] AvailableActions { get; } =
         [ButtonActionType.None, ButtonActionType.KeyboardShortcut, ButtonActionType.MediaControl, ButtonActionType.TextSnippet];
+
+    public static MediaCommand[] AvailableMediaCommands { get; } =
+        [MediaCommand.PlayPause, MediaCommand.VolumeUp, MediaCommand.VolumeDown, MediaCommand.Mute, MediaCommand.NextTrack, MediaCommand.PreviousTrack];
 
     public static ButtonActionType[] AvailableLongPressActions { get; } =
         [ButtonActionType.None, ButtonActionType.ContinuousRepeat];
@@ -131,18 +147,66 @@ public partial class MappingItemViewModel : ObservableObject
         Source = source;
         ClickAction = source.ClickAction;
         ClickShortcut = source.ClickShortcut ?? string.Empty;
-        ClickMedia = source.ClickMedia;
+        ClickMedia = source.ClickMedia != MediaCommand.None ? source.ClickMedia : MediaCommand.PlayPause;
         ClickText = source.ClickText ?? string.Empty;
         LongPressAction = source.LongPressAction;
+
+        if (source.ClickAction == ButtonActionType.TextSnippet)
+        {
+            ParameterText = ClickText;
+        }
+        else
+        {
+            ParameterText = ClickShortcut;
+        }
+    }
+
+    partial void OnClickActionChanged(ButtonActionType value)
+    {
+        OnPropertyChanged(nameof(TextOrShortcutVisibility));
+        OnPropertyChanged(nameof(MediaVisibility));
+
+        if (value == ButtonActionType.TextSnippet && string.IsNullOrEmpty(ParameterText))
+        {
+            ParameterText = ClickText;
+        }
+        else if (value == ButtonActionType.KeyboardShortcut && string.IsNullOrEmpty(ParameterText))
+        {
+            ParameterText = ClickShortcut;
+        }
     }
 
     public void ApplyBack()
     {
         Source.ClickAction = ClickAction;
-        Source.ClickShortcut = string.IsNullOrWhiteSpace(ClickShortcut) ? null : ClickShortcut.Trim();
-        Source.ClickMedia = ClickMedia;
-        Source.ClickText = string.IsNullOrWhiteSpace(ClickText) ? null : ClickText.Trim();
         Source.LongPressAction = LongPressAction;
+
+        if (ClickAction == ButtonActionType.KeyboardShortcut)
+        {
+            ClickShortcut = ParameterText;
+            Source.ClickShortcut = string.IsNullOrWhiteSpace(ParameterText) ? null : ParameterText.Trim();
+            Source.ClickText = null;
+            Source.ClickMedia = MediaCommand.None;
+        }
+        else if (ClickAction == ButtonActionType.TextSnippet)
+        {
+            ClickText = ParameterText;
+            Source.ClickText = string.IsNullOrWhiteSpace(ParameterText) ? null : ParameterText;
+            Source.ClickShortcut = null;
+            Source.ClickMedia = MediaCommand.None;
+        }
+        else if (ClickAction == ButtonActionType.MediaControl)
+        {
+            Source.ClickMedia = ClickMedia;
+            Source.ClickShortcut = null;
+            Source.ClickText = null;
+        }
+        else
+        {
+            Source.ClickShortcut = null;
+            Source.ClickText = null;
+            Source.ClickMedia = MediaCommand.None;
+        }
     }
 }
 
@@ -247,9 +311,16 @@ public partial class IntegrationsViewModel : ObservableObject
     public IntegrationsViewModel(ConfigService config)
     {
         _config = config;
+        Reload();
+    }
+
+    public void Reload()
+    {
         SelectedTool = _config.Current.InputTool.Tool;
         TriggerMode = _config.Current.InputTool.TriggerMode;
         ShortcutText = _config.Current.InputTool.Shortcut;
+        OnPropertyChanged(nameof(IsHoldToTalk));
+        OnPropertyChanged(nameof(IsClickToToggle));
     }
 
     [RelayCommand]

@@ -364,4 +364,21 @@ public class AudioDecoderAndProtocolTests
         Assert.Equal(500, p);
         Assert.Equal(8, s);
     }
+
+    [Fact]
+    public void RawInputReceiver_MapVirtualKeyToRemoteButton_MapsAllStandardKeys()
+    {
+        Assert.Equal(VoiceInputBuddy.Core.Models.RemoteButton.Up, VoiceInputBuddy.Platform.Windows.Input.RawInputReceiver.MapVirtualKeyToRemoteButton(0x26));
+        Assert.Equal(VoiceInputBuddy.Core.Models.RemoteButton.Down, VoiceInputBuddy.Platform.Windows.Input.RawInputReceiver.MapVirtualKeyToRemoteButton(0x28));
+        Assert.Equal(VoiceInputBuddy.Core.Models.RemoteButton.Left, VoiceInputBuddy.Platform.Windows.Input.RawInputReceiver.MapVirtualKeyToRemoteButton(0x25));
+        Assert.Equal(VoiceInputBuddy.Core.Models.RemoteButton.Right, VoiceInputBuddy.Platform.Windows.Input.RawInputReceiver.MapVirtualKeyToRemoteButton(0x27));
+        Assert.Equal(VoiceInputBuddy.Core.Models.RemoteButton.Ok, VoiceInputBuddy.Platform.Windows.Input.RawInputReceiver.MapVirtualKeyToRemoteButton(0x0D));
+        Assert.Equal(VoiceInputBuddy.Core.Models.RemoteButton.Back, VoiceInputBuddy.Platform.Windows.Input.RawInputReceiver.MapVirtualKeyToRemoteButton(0x1B));
+        Assert.Equal(VoiceInputBuddy.Core.Models.RemoteButton.Home, VoiceInputBuddy.Platform.Windows.Input.RawInputReceiver.MapVirtualKeyToRemoteButton(0x24));
+        Assert.Equal(VoiceInputBuddy.Core.Models.RemoteButton.VolumeUp, VoiceInputBuddy.Platform.Windows.Input.RawInputReceiver.MapVirtualKeyToRemoteButton(0xAF));
+        Assert.Equal(VoiceInputBuddy.Core.Models.RemoteButton.VolumeDown, VoiceInputBuddy.Platform.Windows.Input.RawInputReceiver.MapVirtualKeyToRemoteButton(0xAE));
+        Assert.Equal(VoiceInputBuddy.Core.Models.RemoteButton.Mute, VoiceInputBuddy.Platform.Windows.Input.RawInputReceiver.MapVirtualKeyToRemoteButton(0xAD));
+        Assert.Equal(VoiceInputBuddy.Core.Models.RemoteButton.PlayPause, VoiceInputBuddy.Platform.Windows.Input.RawInputReceiver.MapVirtualKeyToRemoteButton(0xB3));
+        Assert.Equal(VoiceInputBuddy.Core.Models.RemoteButton.None, VoiceInputBuddy.Platform.Windows.Input.RawInputReceiver.MapVirtualKeyToRemoteButton(0xFF));
+    }
 }

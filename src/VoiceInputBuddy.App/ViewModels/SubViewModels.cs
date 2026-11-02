@@ -109,6 +109,17 @@ public partial class MappingItemViewModel : ObservableObject
 {
     public ButtonMapping Source { get; }
     public RemoteButton Button => Source.Button;
+    public string ButtonName => Button switch
+    {
+        RemoteButton.Power => "电源键", RemoteButton.Voice => "语音键",
+        RemoteButton.Up => "上键", RemoteButton.Down => "下键",
+        RemoteButton.Left => "左键", RemoteButton.Right => "右键",
+        RemoteButton.Ok => "确定键", RemoteButton.Back => "返回键",
+        RemoteButton.Home => "主页键", RemoteButton.Menu => "菜单键",
+        RemoteButton.VolumeUp => "音量 +", RemoteButton.VolumeDown => "音量 −",
+        RemoteButton.LiveTv => "TV 键", RemoteButton.Mute => "静音键",
+        RemoteButton.PlayPause => "播放 / 暂停", _ => Button.ToString()
+    };
 
     [ObservableProperty]
     private ButtonActionType _clickAction;
@@ -218,53 +229,89 @@ public partial class MappingItemViewModel : ObservableObject
 public partial class MappingViewModel : ObservableObject
 {
     private readonly ConfigService _config;
+    private readonly Dictionary<string, List<MappingItemViewModel>> _drafts = new();
 
     [ObservableProperty]
     private ObservableCollection<MappingItemViewModel> _currentMappings = new();
 
+    public IReadOnlyList<RemoteDevice> Devices => _config.Current.Devices;
+
+    [ObservableProperty]
+    private RemoteDevice? _selectedDevice;
+
+    [ObservableProperty]
+    private MappingItemViewModel? _selectedMapping;
+
+    public string DeviceNote => SelectedDevice?.ModelType is RemoteModelType.XiaomiRC001 or RemoteModelType.XiaomiRC003
+        ? "语音键用于语音输入。本机 RC003 测试中返回及音量键尚未收到事件；其他设备需实测。"
+        : "请选择设备并选择要配置的按键。语音键由输入法集成设置控制。";
+
     public MappingViewModel(ConfigService config)
     {
         _config = config;
+        _selectedDevice = config.Current.Devices.FirstOrDefault(d => d.Id == config.Current.SelectedDeviceId);
+        LoadMappings();
+    }
+
+    partial void OnSelectedDeviceChanged(RemoteDevice? value)
+    {
+        OnPropertyChanged(nameof(DeviceNote));
         LoadMappings();
     }
 
     public void LoadMappings()
     {
         CurrentMappings.Clear();
-        var selectedDev = _config.Current.Devices.FirstOrDefault(d => d.Id == _config.Current.SelectedDeviceId);
+        OnPropertyChanged(nameof(Devices));
+        if (SelectedDevice == null && _config.Current.Devices.Count > 0)
+        {
+            SelectedDevice = _config.Current.Devices.FirstOrDefault(d => d.Id == _config.Current.SelectedDeviceId)
+                ?? _config.Current.Devices[0];
+            return;
+        }
+        var selectedDev = SelectedDevice;
         if (selectedDev != null)
         {
+            if (_drafts.TryGetValue(selectedDev.Id, out var draft))
+            {
+                foreach (var item in draft) CurrentMappings.Add(item);
+                SelectedMapping = CurrentMappings.FirstOrDefault();
+                return;
+            }
             if (selectedDev.Mappings == null || selectedDev.Mappings.Count == 0)
             {
                 selectedDev.Mappings = RemoteDevice.CreateDefaultMappings(selectedDev.ModelType);
                 _config.Save();
             }
-            foreach (var m in selectedDev.Mappings)
+            var buttons = selectedDev.ModelType is RemoteModelType.XiaomiRC001 or RemoteModelType.XiaomiRC003
+                ? new[] { RemoteButton.Power, RemoteButton.Up, RemoteButton.Left, RemoteButton.Right, RemoteButton.Ok,
+                    RemoteButton.Down, RemoteButton.Back, RemoteButton.Home, RemoteButton.Menu,
+                    RemoteButton.VolumeUp, RemoteButton.VolumeDown, RemoteButton.LiveTv }
+                : selectedDev.Mappings.Select(m => m.Button).ToArray();
+            foreach (var button in buttons)
             {
-                CurrentMappings.Add(new MappingItemViewModel(m));
+                var mapping = selectedDev.Mappings.FirstOrDefault(m => m.Button == button)
+                    ?? new ButtonMapping { Button = button, ClickAction = ButtonActionType.None };
+                CurrentMappings.Add(new MappingItemViewModel(mapping));
             }
+            _drafts[selectedDev.Id] = CurrentMappings.ToList();
         }
-        else
-        {
-            var defaults = RemoteDevice.CreateDefaultMappings(RemoteModelType.XiaomiRC001);
-            foreach (var m in defaults)
-            {
-                CurrentMappings.Add(new MappingItemViewModel(m));
-            }
-        }
+        SelectedMapping = CurrentMappings.FirstOrDefault();
     }
 
     [RelayCommand]
     public void SaveMappings()
     {
-        var selectedDev = _config.Current.Devices.FirstOrDefault(d => d.Id == _config.Current.SelectedDeviceId);
+        var selectedDev = SelectedDevice;
         if (selectedDev != null)
         {
             foreach (var item in CurrentMappings)
             {
                 item.ApplyBack();
             }
-            selectedDev.Mappings = CurrentMappings.Select(i => i.Source).ToList();
+            var visibleButtons = CurrentMappings.Select(i => i.Button).ToHashSet();
+            selectedDev.Mappings = selectedDev.Mappings.Where(m => !visibleButtons.Contains(m.Button))
+                .Concat(CurrentMappings.Select(i => i.Source)).ToList();
             _config.Save();
         }
     }

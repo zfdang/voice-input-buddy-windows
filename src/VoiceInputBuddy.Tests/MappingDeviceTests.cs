@@ -34,6 +34,22 @@ public class MappingDeviceTests
         Assert.Equal(ButtonActionType.None, google.Single(m => m.Button == RemoteButton.Power).ClickAction);
     }
 
+    [Theory]
+    [InlineData(RemoteModelType.XiaomiRC001)]
+    [InlineData(RemoteModelType.XiaomiRC003)]
+    [InlineData(RemoteModelType.XiaomiARN9)]
+    [InlineData(RemoteModelType.Unknown)]
+    public void XiaomiAndDefaultMappings_UseWinTabAndBackspace(RemoteModelType type)
+    {
+        var mappings = RemoteDevice.CreateDefaultMappings(type);
+        var home = mappings.Single(m => m.Button == RemoteButton.Home);
+        Assert.Equal(ButtonActionType.KeyboardShortcut, home.ClickAction);
+        Assert.Equal("Win+Tab", home.ClickShortcut);
+        var power = mappings.Single(m => m.Button == RemoteButton.Power);
+        Assert.Equal(ButtonActionType.KeyboardShortcut, power.ClickAction);
+        Assert.Equal("Backspace", power.ClickShortcut);
+    }
+
     [Fact]
     public void TextSnippetMapping_LabelsItsParameterAsCommonPhrase()
     {

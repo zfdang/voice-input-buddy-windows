@@ -143,33 +143,36 @@ public static class NativeInputSender
             else if (upper == "RALT") modifiers.Add(VK_RMENU);
             else if (upper is "WIN" or "WINDOWS" or "LWIN") modifiers.Add(VK_LWIN);
             else if (upper == "RWIN") modifiers.Add(VK_RWIN);
-            ushort parsedKey = 0;
-            if (upper is "ENTER" or "RETURN") parsedKey = VK_RETURN;
-            else if (upper is "ESC" or "ESCAPE") parsedKey = VK_ESCAPE;
-            else if (upper == "TAB") parsedKey = VK_TAB;
-            else if (upper == "SPACE") parsedKey = VK_SPACE;
-            else if (upper is "BACK" or "BACKSPACE") parsedKey = VK_BACK;
-            else if (upper is "DEL" or "DELETE") parsedKey = VK_DELETE;
-            else if (upper == "UP") parsedKey = VK_UP;
-            else if (upper == "DOWN") parsedKey = VK_DOWN;
-            else if (upper == "LEFT") parsedKey = VK_LEFT;
-            else if (upper == "RIGHT") parsedKey = VK_RIGHT;
-            else if (upper == "HOME") parsedKey = VK_HOME;
-            else if (upper == "END") parsedKey = VK_END;
-            else if (upper is "PAGEUP" or "PGUP") parsedKey = VK_PRIOR;
-            else if (upper is "PAGEDOWN" or "PGDN") parsedKey = VK_NEXT;
-            else if (upper is "INSERT" or "INS") parsedKey = VK_INSERT;
-            else if (upper is "APPS" or "MENU") parsedKey = 0x5D;
-            else if (upper.StartsWith("F") && int.TryParse(upper[1..], out int fNum) && fNum >= 1 && fNum <= 12)
+            else
             {
-                parsedKey = (ushort)(VK_F1 + (fNum - 1));
-            }
-            else if (upper.Length == 1 && upper[0] >= 'A' && upper[0] <= 'Z') parsedKey = upper[0];
-            else if (upper.Length == 1 && upper[0] >= '0' && upper[0] <= '9') parsedKey = upper[0];
-            else return false;
+                ushort parsedKey = 0;
+                if (upper is "ENTER" or "RETURN") parsedKey = VK_RETURN;
+                else if (upper is "ESC" or "ESCAPE") parsedKey = VK_ESCAPE;
+                else if (upper == "TAB") parsedKey = VK_TAB;
+                else if (upper == "SPACE") parsedKey = VK_SPACE;
+                else if (upper is "BACK" or "BACKSPACE") parsedKey = VK_BACK;
+                else if (upper is "DEL" or "DELETE") parsedKey = VK_DELETE;
+                else if (upper == "UP") parsedKey = VK_UP;
+                else if (upper == "DOWN") parsedKey = VK_DOWN;
+                else if (upper == "LEFT") parsedKey = VK_LEFT;
+                else if (upper == "RIGHT") parsedKey = VK_RIGHT;
+                else if (upper == "HOME") parsedKey = VK_HOME;
+                else if (upper == "END") parsedKey = VK_END;
+                else if (upper is "PAGEUP" or "PGUP") parsedKey = VK_PRIOR;
+                else if (upper is "PAGEDOWN" or "PGDN") parsedKey = VK_NEXT;
+                else if (upper is "INSERT" or "INS") parsedKey = VK_INSERT;
+                else if (upper is "APPS" or "MENU") parsedKey = 0x5D;
+                else if (upper.StartsWith("F") && int.TryParse(upper[1..], out int fNum) && fNum >= 1 && fNum <= 12)
+                {
+                    parsedKey = (ushort)(VK_F1 + (fNum - 1));
+                }
+                else if (upper.Length == 1 && upper[0] >= 'A' && upper[0] <= 'Z') parsedKey = upper[0];
+                else if (upper.Length == 1 && upper[0] >= '0' && upper[0] <= '9') parsedKey = upper[0];
+                else return false;
 
-            if (mainKey != 0) return false; // Duplicate main key is invalid
-            mainKey = parsedKey;
+                if (mainKey != 0) return false; // Duplicate main key is invalid
+                mainKey = parsedKey;
+            }
         }
 
         return mainKey != 0 || modifiers.Count > 0;

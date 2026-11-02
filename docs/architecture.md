@@ -111,3 +111,23 @@ VoiceInputBuddy.sln
 2. **BLE 事件回调队列 (WinRT ThreadPool)**：异步处理 GATT Notification 数据，接收 ADPCM 包后立即移交音频处理管线。
 3. **音频解码与推流线程 (Dedicated High-Priority Thread)**：专有高优先级线程，负责 ADPCM 解码与 WASAPI 缓冲泵（Pump），确保音频流不被主线程操作阻塞。
 4. **按键监听消息循环 (Raw Input Thread)**：专有消息窗口，后台接收 `WM_INPUT`，执行按键防抖与长按判定。
+
+---
+
+## 五、本地诊断日志体系 (Diagnostics & Troubleshooting)
+
+为了便于排查遥控器连接、ATVV 协议协商、按键映射与驱动状态等问题，程序内置了线程安全的轻量级本地诊断日志（`AppLogger`）：
+
+* **日志存储位置**：`%APPDATA%\VoiceInputBuddy\logs\app.log`
+* **滚动与归档策略**：单文件上限 5MB，最多保留 3 个归档副本（`app.1.log` ~ `app.3.log`），占用磁盘空间严格受限（< 20MB）。
+* **诊断记录范围**：
+  * 进程生命周期与异常（未捕获异常、启动参数、平台信息）；
+  * BLE 扫描发现、连接协商与 GATT 特征订阅状态；
+  * ATVV 协议握手、会话状态流转（`Opening` -> `Streaming` -> `Draining` -> `Idle`）；
+  * Raw Input 设备注册、Container ID 匹配、遥控器按键与映射动作分发；
+  * 虚拟声卡驱动审计（VB-CABLE Ready / NotInstalled / RebootRequired）。
+* **严格隐私保护规范**：
+  * **绝不**记录任何麦克风语音流、音频波形与原始音频文件；
+  * **绝不**记录用户语音转写的文本内容或剪贴板隐私；
+  * **绝不**收集用户统计数据或进行远程遥测上报，纯本地安全排查。
+* **用户交互支持**：设置界面提供一键直达“打开日志文件夹”，方便用户快速提取日志文件进行问题反馈。

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using VoiceInputBuddy.Core.Diagnostics;
 using VoiceInputBuddy.Core.Models;
 
 namespace VoiceInputBuddy.Core.Config;
@@ -43,16 +44,18 @@ public class ConfigService
                 if (config != null)
                 {
                     Current = config;
+                    AppLogger.Info($"Configuration loaded from {_configFilePath}. Devices: {Current.Devices.Count}, Selected: {Current.SelectedDeviceId ?? "none"}", "ConfigService");
                     return Current;
                 }
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Fallback to default
+            AppLogger.Error($"Failed to load configuration from {_configFilePath}, using defaults", ex, "ConfigService");
         }
 
         Current = new AppConfig();
+        AppLogger.Info($"Initialized default configuration for {_configFilePath}", "ConfigService");
         return Current;
     }
 
@@ -68,10 +71,11 @@ public class ConfigService
 
             string json = JsonSerializer.Serialize(Current, JsonOptions);
             File.WriteAllText(_configFilePath, json);
+            AppLogger.Info($"Configuration saved to {_configFilePath}", "ConfigService");
         }
-        catch
+        catch (Exception ex)
         {
-            // Ignore or log error
+            AppLogger.Error($"Failed to save configuration to {_configFilePath}", ex, "ConfigService");
         }
     }
 }

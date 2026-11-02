@@ -3,6 +3,7 @@ using System.Diagnostics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using VoiceInputBuddy.Core.Config;
+using VoiceInputBuddy.Core.Diagnostics;
 using VoiceInputBuddy.Core.Models;
 using VoiceInputBuddy.Platform.Windows.Audio;
 using VoiceInputBuddy.Platform.Windows.Bluetooth;
@@ -292,6 +293,7 @@ public partial class OnboardingViewModel : ObservableObject
 
         if (CurrentStep < TotalSteps)
         {
+            AppLogger.Info($"Onboarding progressing from Step {CurrentStep} to {CurrentStep + 1}", "OnboardingViewModel");
             CurrentStep++;
             UpdateStepMetadata();
         }
@@ -329,6 +331,7 @@ public partial class OnboardingViewModel : ObservableObject
         SaveToolConfig();
         _config.Current.HasCompletedOnboarding = true;
         _config.Save();
+        AppLogger.Info("Onboarding wizard completed and configuration saved", "OnboardingViewModel");
         RequestClose?.Invoke();
     }
 

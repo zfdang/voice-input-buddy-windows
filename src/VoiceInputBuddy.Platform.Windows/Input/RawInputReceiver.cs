@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using VoiceInputBuddy.Core.Diagnostics;
 using VoiceInputBuddy.Core.Models;
 using VoiceInputBuddy.Core.Protocols;
 
@@ -215,6 +216,15 @@ public sealed class RawInputReceiver : IDisposable
         };
 
         _isRegistered = RegisterRawInputDevices(devices, (uint)devices.Length, (uint)Marshal.SizeOf<RAWINPUTDEVICE>());
+        if (_isRegistered)
+        {
+            AppLogger.Info($"RawInput devices successfully registered for HWND 0x{hwnd:X}", "RawInputReceiver");
+        }
+        else
+        {
+            int err = Marshal.GetLastWin32Error();
+            AppLogger.Error($"Failed to register RawInput devices for HWND 0x{hwnd:X}. Win32Error={err}", component: "RawInputReceiver");
+        }
         return _isRegistered;
     }
 
@@ -276,6 +286,7 @@ public sealed class RawInputReceiver : IDisposable
                     {
                         if (pressedButtons.Add(btn))
                         {
+                            AppLogger.Info($"RawInput Keyboard event: {btn} Down (vkey=0x{vkey:X2}, hDevice=0x{hDevice:X})", "RawInputReceiver");
                             ButtonEvent?.Invoke(hDevice, btn, true);
                         }
                     }
@@ -283,6 +294,7 @@ public sealed class RawInputReceiver : IDisposable
                     {
                         if (pressedButtons.Remove(btn))
                         {
+                            AppLogger.Info($"RawInput Keyboard event: {btn} Up (vkey=0x{vkey:X2}, hDevice=0x{hDevice:X})", "RawInputReceiver");
                             ButtonEvent?.Invoke(hDevice, btn, false);
                         }
                     }
@@ -350,6 +362,7 @@ public sealed class RawInputReceiver : IDisposable
                     foreach (var btn in released)
                     {
                         pressedButtons.Remove(btn);
+                        AppLogger.Info($"RawInput HID event: {btn} Up (hDevice=0x{hDevice:X})", "RawInputReceiver");
                         ButtonEvent?.Invoke(hDevice, btn, false);
                     }
 
@@ -358,6 +371,7 @@ public sealed class RawInputReceiver : IDisposable
                     {
                         if (pressedButtons.Add(btn))
                         {
+                            AppLogger.Info($"RawInput HID event: {btn} Down (hDevice=0x{hDevice:X})", "RawInputReceiver");
                             ButtonEvent?.Invoke(hDevice, btn, true);
                         }
                     }

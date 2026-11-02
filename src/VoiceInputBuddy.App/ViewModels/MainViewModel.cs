@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using VoiceInputBuddy.Core.Config;
+using VoiceInputBuddy.Core.Diagnostics;
 using VoiceInputBuddy.Core.Models;
 using VoiceInputBuddy.Core.Protocols;
 using VoiceInputBuddy.Platform.Windows.Bluetooth;
@@ -93,6 +94,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             var session = new ActiveVoiceSession(currentConfig.TriggerMode, currentConfig.Shortcut, currentConfig.Tool);
             _activeVoiceSession = session;
             IsVoiceActive = true;
+            AppLogger.Info($"Voice session started: Tool={session.Tool}, Mode={session.TriggerMode}, Shortcut='{session.Shortcut}'", "MainViewModel");
             if (session.TriggerMode == VoiceTriggerMode.HoldToTalk)
             {
                 NativeInputSender.SendShortcutDown(session.Shortcut);
@@ -110,6 +112,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             if (_activeVoiceSession is { } session)
             {
                 _activeVoiceSession = null;
+                AppLogger.Info($"Voice session ended: Mode={session.TriggerMode}, Shortcut='{session.Shortcut}'", "MainViewModel");
                 if (session.TriggerMode == VoiceTriggerMode.HoldToTalk)
                 {
                     NativeInputSender.SendShortcutUp(session.Shortcut);
@@ -221,6 +224,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var mapping = selectedDev?.Mappings?.FirstOrDefault(m => m.Button == button);
         if (mapping == null) return;
 
+        AppLogger.Info($"Button mapping event: {button} isDown={isDown}, Action={mapping.ClickAction}", "MainViewModel");
+
         if (isDown)
         {
             ExecuteButtonAction(mapping.ClickAction, mapping.ClickShortcut, mapping.ClickMedia, mapping.ClickText);
@@ -240,6 +245,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                         StopRepeatTimer();
                         return;
                     }
+                    AppLogger.Debug($"Repeating button action: {capturedMapping.Button} ({capturedMapping.ClickAction})", "MainViewModel");
                     ExecuteButtonAction(capturedMapping.ClickAction, capturedMapping.ClickShortcut, capturedMapping.ClickMedia, capturedMapping.ClickText);
                 }, null, 400, 100);
             }

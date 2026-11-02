@@ -3,6 +3,7 @@ using Windows.Devices.Bluetooth.Advertisement;
 using Windows.Devices.Bluetooth.GenericAttributeProfile;
 using Windows.Security.Cryptography;
 using VoiceInputBuddy.Core.Audio;
+using VoiceInputBuddy.Core.Diagnostics;
 using VoiceInputBuddy.Core.Models;
 using VoiceInputBuddy.Core.Protocols;
 using VoiceInputBuddy.Platform.Windows.Audio;
@@ -69,18 +70,26 @@ public sealed class WinRtBluetoothManager : IDisposable
     {
         try
         {
+            AppLogger.Info("Starting Bluetooth LE advertisement scan...", "BluetoothManager");
             _watcher.Start();
         }
-        catch { }
+        catch (Exception ex)
+        {
+            AppLogger.Error("Failed to start Bluetooth LE scan", ex, "BluetoothManager");
+        }
     }
 
     public void StopScanning()
     {
         try
         {
+            AppLogger.Info("Stopping Bluetooth LE advertisement scan...", "BluetoothManager");
             _watcher.Stop();
         }
-        catch { }
+        catch (Exception ex)
+        {
+            AppLogger.Error("Failed to stop Bluetooth LE scan", ex, "BluetoothManager");
+        }
     }
 
     private void OnAdvertisementReceived(BluetoothLEAdvertisementWatcher sender, BluetoothLEAdvertisementReceivedEventArgs args)
@@ -90,6 +99,7 @@ public sealed class WinRtBluetoothManager : IDisposable
 
         if (XiaomiProtocol.IsCandidate(name) || G9N9NProtocol.IsCandidate(name))
         {
+            AppLogger.Info($"Discovered candidate remote: '{name}' (Address: 0x{args.BluetoothAddress:X12}, RSSI: {args.RawSignalStrengthInDBm} dBm)", "BluetoothManager");
             var device = new RemoteDevice
             {
                 Id = args.BluetoothAddress.ToString("X"),
@@ -104,6 +114,7 @@ public sealed class WinRtBluetoothManager : IDisposable
 
     public async Task<bool> ConnectAsync(ulong bluetoothAddress)
     {
+        AppLogger.Info($"ConnectAsync initiated for BluetoothAddress: 0x{bluetoothAddress:X12}", "BluetoothManager");
         Disconnect();
 
         int targetConnGen;
@@ -130,6 +141,7 @@ public sealed class WinRtBluetoothManager : IDisposable
             var device = await BluetoothLEDevice.FromBluetoothAddressAsync(bluetoothAddress);
             if (device == null)
             {
+                AppLogger.Error($"BluetoothLEDevice.FromBluetoothAddressAsync returned null for 0x{bluetoothAddress:X12}", component: "BluetoothManager");
                 CleanupAttempt(null);
                 return false;
             }
@@ -145,10 +157,13 @@ public sealed class WinRtBluetoothManager : IDisposable
                 _connectedDevice.ConnectionStatusChanged += OnDeviceConnectionStatusChanged;
             }
 
+            AppLogger.Info($"Device object obtained: '{device.Name}' ({device.DeviceId}), status: {device.ConnectionStatus}", "BluetoothManager");
+
             // Discover Service
             var servicesResult = await device.GetGattServicesForUuidAsync(ATVVProtocol.ServiceUuid);
             if (servicesResult.Status != GattCommunicationStatus.Success || servicesResult.Services.Count == 0)
             {
+                AppLogger.Error($"Failed to discover ATVV GATT service {ATVVProtocol.ServiceUuid}: Status={servicesResult.Status}, Count={servicesResult.Services.Count}", component: "BluetoothManager");
                 CleanupAttempt(device);
                 return false;
             }
@@ -166,6 +181,7 @@ public sealed class WinRtBluetoothManager : IDisposable
             var charsResult = await service.GetCharacteristicsAsync();
             if (charsResult.Status != GattCommunicationStatus.Success)
             {
+                AppLogger.Error($"Failed to discover ATVV characteristics: Status={charsResult.Status}", component: "BluetoothManager");
                 CleanupAttempt(device);
                 return false;
             }
@@ -192,6 +208,7 @@ public sealed class WinRtBluetoothManager : IDisposable
 
             if (tx == null || audio == null || control == null)
             {
+                AppLogger.Error($"Missing required ATVV characteristics: TX={(tx != null)}, Audio={(audio != null)}, Control={(control != null)}", component: "BluetoothManager");
                 CleanupAttempt(device);
                 return false;
             }
@@ -205,6 +222,7 @@ public sealed class WinRtBluetoothManager : IDisposable
                 GattClientCharacteristicConfigurationDescriptorValue.Notify);
             if (audioStatus != GattCommunicationStatus.Success)
             {
+                AppLogger.Error($"Failed to subscribe to Audio notifications: Status={audioStatus}", component: "BluetoothManager");
                 CleanupAttempt(device);
                 return false;
             }
@@ -223,6 +241,7 @@ public sealed class WinRtBluetoothManager : IDisposable
                 GattClientCharacteristicConfigurationDescriptorValue.Notify);
             if (controlStatus != GattCommunicationStatus.Success)
             {
+                AppLogger.Error($"Failed to subscribe to Control notifications: Status={controlStatus}", component: "BluetoothManager");
                 CleanupAttempt(device);
                 return false;
             }
@@ -244,14 +263,17 @@ public sealed class WinRtBluetoothManager : IDisposable
             var writeStatus = await tx.WriteValueAsync(buffer, GattWriteOption.WriteWithoutResponse);
             if (writeStatus != GattCommunicationStatus.Success)
             {
+                AppLogger.Error($"Failed to write ATVV GetCapabilities command: Status={writeStatus}", component: "BluetoothManager");
                 CleanupAttempt(device);
                 ConnectionStatusChanged?.Invoke(false, "下发能力协商命令失败");
                 return false;
             }
 
+            AppLogger.Info("ATVV GetCapabilities sent, awaiting remote response...", "BluetoothManager");
             var completedTask = await Task.WhenAny(_capabilitiesTcs.Task, Task.Delay(5000));
             if (completedTask != _capabilitiesTcs.Task || !await _capabilitiesTcs.Task)
             {
+                AppLogger.Warn("ATVV capabilities negotiation timed out or failed 16kHz validation", "BluetoothManager");
                 CleanupAttempt(device);
                 ConnectionStatusChanged?.Invoke(false, "能力协商超时或不支持 16kHz 编码");
                 return false;
@@ -284,11 +306,13 @@ public sealed class WinRtBluetoothManager : IDisposable
                 ConnectedDeviceContainerId = Input.RawInputReceiver.GetDeviceContainerId(device.DeviceId);
             }
 
+            AppLogger.Info($"Bluetooth remote connected and ready: '{device.Name}', FrameSize={_frameSize}, ContainerId={ConnectedDeviceContainerId}", "BluetoothManager");
             ConnectionStatusChanged?.Invoke(true, device.Name);
             return true;
         }
-        catch
+        catch (Exception ex)
         {
+            AppLogger.Error($"Exception during ConnectAsync for 0x{bluetoothAddress:X12}", ex, "BluetoothManager");
             CleanupAttempt(null);
             return false;
         }
@@ -301,6 +325,7 @@ public sealed class WinRtBluetoothManager : IDisposable
             if (_connectedDevice != sender) return;
         }
         bool connected = sender.ConnectionStatus == BluetoothConnectionStatus.Connected;
+        AppLogger.Info($"Device connection status changed: {sender.Name}, connected={connected}", "BluetoothManager");
         if (!connected)
         {
             Disconnect();
@@ -317,12 +342,14 @@ public sealed class WinRtBluetoothManager : IDisposable
         {
             if (_sessionState != BluetoothSessionState.Idle || _txCharacteristic == null)
             {
+                AppLogger.Warn($"Cannot start voice session: State={_sessionState}, TxNull={(_txCharacteristic == null)}", "BluetoothManager");
                 return false;
             }
 
             // Output must be ready before opening mic
             if (!_audioPlayer.Start())
             {
+                AppLogger.Error("Audio player failed to start output device before opening mic", component: "BluetoothManager");
                 return false;
             }
 
@@ -333,6 +360,8 @@ public sealed class WinRtBluetoothManager : IDisposable
             currentSessGen = ++_sessionGeneration;
             opId = ++_activeOpeningOperationId;
         }
+
+        AppLogger.Info($"Starting voice session: SessionGen={currentSessGen}, OpId={opId}. State -> Opening", "BluetoothManager");
 
         // Reset audio pipeline outside _stateLock to prevent AB-BA deadlock
         lock (_audioLock)
@@ -350,6 +379,7 @@ public sealed class WinRtBluetoothManager : IDisposable
 
             if (writeStatus != GattCommunicationStatus.Success)
             {
+                AppLogger.Error($"Failed to send ATVV MicrophoneOpen packet: Status={writeStatus}", component: "BluetoothManager");
                 lock (_stateLock)
                 {
                     if (currentConnGen == _connectionGeneration && currentSessGen == _sessionGeneration && opId == _activeOpeningOperationId)
@@ -365,13 +395,13 @@ public sealed class WinRtBluetoothManager : IDisposable
             {
                 if (currentConnGen != _connectionGeneration || currentSessGen != _sessionGeneration || opId != _activeOpeningOperationId)
                 {
-                    // Stale operation: cancelled, disconnected, or superseded.
+                    AppLogger.Warn("MicrophoneOpen completed but operation was cancelled or superseded", "BluetoothManager");
                     return false;
                 }
 
                 if (_sessionState != BluetoothSessionState.Opening || _cancelOpenPending)
                 {
-                    // Fast release occurred during await on this SAME session
+                    AppLogger.Info("Fast release detected during Opening, closing mic immediately", "BluetoothManager");
                     _ = SendClosePacketAsync(_currentSessionId);
                     _audioPlayer.Stop();
                     _sessionState = BluetoothSessionState.Idle;
@@ -383,11 +413,13 @@ public sealed class WinRtBluetoothManager : IDisposable
                 StartKeepaliveTimer();
             }
 
+            AppLogger.Info("Microphone opened successfully. State -> Streaming", "BluetoothManager");
             VoiceSessionStarted?.Invoke();
             return true;
         }
-        catch
+        catch (Exception ex)
         {
+            AppLogger.Error("Exception while opening microphone", ex, "BluetoothManager");
             lock (_stateLock)
             {
                 if (currentConnGen == _connectionGeneration && currentSessGen == _sessionGeneration && opId == _activeOpeningOperationId)
@@ -409,6 +441,7 @@ public sealed class WinRtBluetoothManager : IDisposable
         {
             if (_sessionState == BluetoothSessionState.Opening)
             {
+                AppLogger.Info("StopVoiceSession requested during Opening, setting cancel pending", "BluetoothManager");
                 _cancelOpenPending = true;
                 _activeOpeningOperationId++;
                 return true;
@@ -416,6 +449,7 @@ public sealed class WinRtBluetoothManager : IDisposable
 
             if (_sessionState != BluetoothSessionState.Streaming)
             {
+                AppLogger.Debug($"StopVoiceSession ignored, current state is {_sessionState}", "BluetoothManager");
                 return false;
             }
 
@@ -426,6 +460,8 @@ public sealed class WinRtBluetoothManager : IDisposable
             StopKeepaliveTimer();
             _audioStopTcs = new TaskCompletionSource<bool>();
         }
+
+        AppLogger.Info($"StopVoiceSession initiated for SessionId={sessionIdToClose}. State -> Draining", "BluetoothManager");
 
         // Send 0x0D MicClose
         await SendClosePacketAsync(sessionIdToClose);
@@ -441,7 +477,7 @@ public sealed class WinRtBluetoothManager : IDisposable
         {
             if (currentConnGen != _connectionGeneration || currentSessGen != _sessionGeneration)
             {
-                // Stale stopping operation: a newer session or disconnect has taken over.
+                AppLogger.Warn("StopVoiceSession completed but session was superseded", "BluetoothManager");
                 return false;
             }
 
@@ -457,6 +493,7 @@ public sealed class WinRtBluetoothManager : IDisposable
             }
         }
 
+        AppLogger.Info("Voice session closed and audio stopped. State -> Idle", "BluetoothManager");
         if (emitEnded)
         {
             VoiceSessionEnded?.Invoke();
@@ -570,6 +607,7 @@ public sealed class WinRtBluetoothManager : IDisposable
                     if (capturedConnGen != _connectionGeneration) return;
                 }
                 var caps = ATVVProtocol.ParseCapabilities(data);
+                AppLogger.Info($"ATVV response CapabilitiesResp (0x0B): Version=0x{caps?.Version:X4}, Codecs=0x{caps?.Codecs:X2}, FrameSize={caps?.FrameSize}", "BluetoothManager");
                 if (caps != null && caps.SampleRate == 16000 && (caps.Codecs & 0x02) != 0)
                 {
                     lock (_stateLock)
@@ -588,6 +626,7 @@ public sealed class WinRtBluetoothManager : IDisposable
             case ATVVProtocol.OpcodeAudioStart: // 0x04
                 if (ATVVProtocol.ParseAudioStart(data, out _, out byte codec, out byte sessionId))
                 {
+                    AppLogger.Info($"ATVV packet AudioStart (0x04): Codec=0x{codec:X2}, SessionId={sessionId}", "BluetoothManager");
                     lock (_stateLock)
                     {
                         if (capturedConnGen != _connectionGeneration) return;
@@ -596,6 +635,7 @@ public sealed class WinRtBluetoothManager : IDisposable
                     // Reject non-16kHz codec (e.g. 8kHz)
                     if (codec != 0x02)
                     {
+                        AppLogger.Warn($"Rejecting non-16kHz codec (0x{codec:X2}), sending MicClose", "BluetoothManager");
                         _ = SendClosePacketAsync(sessionId);
                         bool shouldEmitEnded = false;
                         lock (_stateLock)
@@ -631,12 +671,14 @@ public sealed class WinRtBluetoothManager : IDisposable
 
                     if (wasCancelledOrEnded)
                     {
+                        AppLogger.Info($"AudioStart received while state={_sessionState}/cancelPending={_cancelOpenPending}, sending close", "BluetoothManager");
                         _ = SendClosePacketAsync(sessionId);
                     }
                 }
                 break;
 
             case ATVVProtocol.OpcodeMicrophoneRefused: // 0x0C
+                AppLogger.Warn("ATVV packet MicrophoneRefused (0x0C) received from remote", "BluetoothManager");
                 bool emitRefusedEnded = false;
                 lock (_stateLock)
                 {
@@ -663,6 +705,7 @@ public sealed class WinRtBluetoothManager : IDisposable
             case ATVVProtocol.OpcodeAudioSync: // 0x0A
                 if (ATVVProtocol.ParseAudioSync(data, out short predictor, out byte stepIndex))
                 {
+                    AppLogger.Debug($"ATVV packet AudioSync (0x0A): Predictor={predictor}, StepIndex={stepIndex}", "BluetoothManager");
                     lock (_audioLock)
                     {
                         if (capturedAudioGen != _audioGeneration) return;
@@ -672,6 +715,7 @@ public sealed class WinRtBluetoothManager : IDisposable
                 break;
 
             case ATVVProtocol.OpcodeStartSearch: // 0x08
+                AppLogger.Info("ATVV packet StartSearch (0x08) received from remote (voice key pressed)", "BluetoothManager");
                 lock (_stateLock)
                 {
                     if (capturedConnGen != _connectionGeneration) return;
@@ -680,6 +724,7 @@ public sealed class WinRtBluetoothManager : IDisposable
                 break;
 
             case ATVVProtocol.OpcodeAudioStop: // 0x00
+                AppLogger.Info("ATVV packet AudioStop (0x00) received from remote (voice key released)", "BluetoothManager");
                 lock (_stateLock)
                 {
                     if (capturedConnGen != _connectionGeneration) return;
@@ -695,6 +740,7 @@ public sealed class WinRtBluetoothManager : IDisposable
 
     public void Disconnect()
     {
+        AppLogger.Info("Disconnect initiated: cleaning up Bluetooth connection and audio resources", "BluetoothManager");
         bool emitEnded = false;
         BluetoothLEDevice? devToDispose = null;
         lock (_stateLock)

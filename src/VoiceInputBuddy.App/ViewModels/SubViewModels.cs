@@ -3,6 +3,7 @@ using System.Reflection;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using VoiceInputBuddy.Core.Config;
+using VoiceInputBuddy.Core.Diagnostics;
 using VoiceInputBuddy.Core.Models;
 using VoiceInputBuddy.Platform.Windows.Audio;
 using VoiceInputBuddy.Platform.Windows.Bluetooth;
@@ -403,12 +404,16 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private string _appVersion;
 
+    [ObservableProperty]
+    private string _logDirectoryPath;
+
     public SettingsViewModel(ConfigService config, Action openOnboarding)
     {
         _config = config;
         _openOnboarding = openOnboarding;
         LaunchAtStartup = StartupService.IsLaunchAtStartupEnabled();
         MinimizeToTrayOnClose = _config.Current.MinimizeToTrayOnClose;
+        LogDirectoryPath = AppLogger.LogDirectory;
 
         var infoVer = Assembly.GetEntryAssembly()?
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
@@ -441,5 +446,11 @@ public partial class SettingsViewModel : ObservableObject
     public void RerunWizard()
     {
         _openOnboarding.Invoke();
+    }
+
+    [RelayCommand]
+    public void OpenLogFolder()
+    {
+        AppLogger.OpenLogFolder();
     }
 }

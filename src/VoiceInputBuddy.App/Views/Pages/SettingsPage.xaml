@@ -20,6 +20,18 @@
                 </DockPanel>
             </Border>
 
+            <!-- Diagnostics & Troubleshooting Logs -->
+            <Border Background="{StaticResource CardBackgroundBrush}" Padding="16" CornerRadius="6" Margin="0,0,0,20">
+                <DockPanel LastChildFill="False">
+                    <StackPanel DockPanel.Dock="Left" MaxWidth="500">
+                        <TextBlock Text="诊断日志 (Troubleshooting)" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}"/>
+                        <TextBlock Text="在本地记录蓝牙连接、ATVV 协议协商、按键映射与运行错误等排查信息。严禁且不记录任何语音音频或转写文本。" FontSize="12" Foreground="{StaticResource SecondaryTextBrush}" TextWrapping="Wrap" Margin="0,4,0,6"/>
+                        <TextBlock Text="{Binding LogDirectoryPath, StringFormat='存储路径: {0}'}" FontSize="11" Foreground="{StaticResource SecondaryTextBrush}" TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <Button Content="📁 打开日志文件夹" DockPanel.Dock="Right" VerticalAlignment="Center" Padding="14,8" Background="#2D2D30" Foreground="#FFF" Command="{Binding OpenLogFolderCommand}"/>
+                </DockPanel>
+            </Border>
+
             <!-- Preferences -->
             <Border Background="{StaticResource CardBackgroundBrush}" Padding="16" CornerRadius="6" Margin="0,0,0,20">
                 <StackPanel>

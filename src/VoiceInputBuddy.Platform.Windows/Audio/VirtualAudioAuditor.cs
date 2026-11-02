@@ -1,5 +1,6 @@
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
+using VoiceInputBuddy.Core.Diagnostics;
 
 namespace VoiceInputBuddy.Platform.Windows.Audio;
 
@@ -27,7 +28,9 @@ public static class VirtualAudioAuditor
             {
                 var allDevices = enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.All);
                 bool pending = allDevices.Any(d => d.FriendlyName.Contains("CABLE Input", StringComparison.OrdinalIgnoreCase));
-                return pending ? DriverReadinessStatus.RebootRequired : DriverReadinessStatus.NotInstalled;
+                var status = pending ? DriverReadinessStatus.RebootRequired : DriverReadinessStatus.NotInstalled;
+                AppLogger.Warn($"VB-CABLE audit result: {status} (Active endpoint not found, pending={pending})", "VirtualAudioAuditor");
+                return status;
             }
 
             // Real WASAPI test open
@@ -35,10 +38,12 @@ public static class VirtualAudioAuditor
             using var testOut = new WasapiOut(cableInput, AudioClientShareMode.Shared, useEventSync: true, latency: 20);
             var dummyProvider = new BufferedWaveProvider(waveFormat);
             testOut.Init(dummyProvider);
+            AppLogger.Info("VB-CABLE audit result: Ready (WASAPI test open succeeded)", "VirtualAudioAuditor");
             return DriverReadinessStatus.Ready;
         }
-        catch
+        catch (Exception ex)
         {
+            AppLogger.Warn($"VB-CABLE audit failed with exception: {ex.Message}, returning RebootRequired", "VirtualAudioAuditor");
             return DriverReadinessStatus.RebootRequired;
         }
     }
@@ -75,7 +80,11 @@ public sealed class WasapiAudioPlayer : IDisposable
             Stop();
 
             device ??= VirtualAudioAuditor.GetCableInputDevice();
-            if (device == null) return false;
+            if (device == null)
+            {
+                AppLogger.Warn("WasapiAudioPlayer.Start failed: CABLE Input device not found", "WasapiAudioPlayer");
+                return false;
+            }
 
             try
             {
@@ -88,10 +97,12 @@ public sealed class WasapiAudioPlayer : IDisposable
 
                 _wasapiOut.Init(_waveProvider);
                 _wasapiOut.Play();
+                AppLogger.Info("WasapiAudioPlayer started playback to CABLE Input (16kHz 16-bit Mono)", "WasapiAudioPlayer");
                 return true;
             }
-            catch
+            catch (Exception ex)
             {
+                AppLogger.Error("WasapiAudioPlayer failed to initialize WASAPI stream", ex, "WasapiAudioPlayer");
                 Stop();
                 return false;
             }

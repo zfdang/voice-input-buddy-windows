@@ -75,7 +75,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             _bluetoothManager.SessionState is BluetoothSessionState.Opening or BluetoothSessionState.Streaming);
         _rawInputReceiver.PhysicalVoiceKeyPressed += _voiceKeyGuard.Arm;
 
-        DevicesVm = new DevicesViewModel(_configService, _bluetoothManager);
+        DevicesVm = new DevicesViewModel(_configService, _bluetoothManager, () => RequestOpenOnboarding?.Invoke());
         MappingVm = new MappingViewModel(_configService);
         IntegrationsVm = new IntegrationsViewModel(_configService);
         EnvironmentVm = new EnvironmentViewModel();
@@ -288,6 +288,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         if (isDown)
         {
+            if (!MappingVm.IsMappingSelectionLocked)
+            {
+                MappingVm.SelectButton(button.ToString());
+            }
+            MappingVm.ActiveHardwareButton = button;
+
             StopRepeatTimer();
             ExecuteButtonAction(mapping.ClickAction, mapping.ClickShortcut, mapping.ClickMedia, mapping.ClickText);
 
@@ -315,6 +321,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
         else
         {
+            if (MappingVm.ActiveHardwareButton == button)
+            {
+                MappingVm.ActiveHardwareButton = RemoteButton.None;
+            }
+
             lock (_repeatLock)
             {
                 if (button == _heldButton)

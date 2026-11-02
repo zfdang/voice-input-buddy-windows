@@ -131,13 +131,20 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 IsVoiceActive = true;
                 if (ActiveOnboardingVm is { CurrentStep: not 7 }) return;
                 UpdateVoiceKeyGuard();
+                // ATVV is itself a verified remote source. Some Windows BLE HID
+                // paths do not deliver a source-bearing F5 Raw Input event, so
+                // relying solely on PhysicalVoiceKeyPressed leaves F5 held when
+                // the IME chord is injected.
+                _voiceKeyGuard.Arm();
                 var currentConfig = _configService.Current.InputTool;
                 var session = new ActiveVoiceSession(currentConfig.TriggerMode, currentConfig.Shortcut, currentConfig.Tool);
                 _activeVoiceSession = session;
                 AppLogger.Info($"Voice session started: Tool={session.Tool}, Mode={session.TriggerMode}, Shortcut='{session.Shortcut}'", "MainViewModel");
                 if (session.TriggerMode == VoiceTriggerMode.HoldToTalk)
                 {
+                    _voiceKeyGuard.BeginShortcutHold(session.Shortcut);
                     bool sent = NativeInputSender.SendShortcutDown(session.Shortcut);
+                    if (!sent) _voiceKeyGuard.EndShortcutHold();
                     AppLogger.Info($"Input tool shortcut down: Success={sent}", "MainViewModel");
                 }
                 else

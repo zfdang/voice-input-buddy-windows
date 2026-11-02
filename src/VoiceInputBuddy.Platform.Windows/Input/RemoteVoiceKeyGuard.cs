@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using System.Runtime.InteropServices;
+using VoiceInputBuddy.Core.Diagnostics;
 
 namespace VoiceInputBuddy.Platform.Windows.Input;
 
@@ -12,6 +13,22 @@ public sealed class RemoteVoiceKeyGuard(Func<bool> voiceSessionActive) : IDispos
     private IntPtr _hook;
     private volatile bool _armed;
     private long _armedAt;
+    private bool _ownsF5;
+    private int _blockedDowns;
+    private int _blockedUps;
+
+    public void BeginShortcutHold(string shortcut)
+    {
+        _ownsF5 = NativeInputSender.TryParseShortcut(shortcut, out _, out var key) && key == 0x74;
+        _blockedDowns = _blockedUps = 0;
+    }
+
+    public void EndShortcutHold()
+    {
+        if (_ownsF5)
+            AppLogger.Info($"F5 hold finished: PhysicalDownsBlocked={_blockedDowns}, PhysicalUpsBlocked={_blockedUps}", "RemoteVoiceKeyGuard");
+        _ownsF5 = false;
+    }
 
     public bool IsSuppressionEnabled { get; set; } = true;
 
@@ -41,24 +58,40 @@ public sealed class RemoteVoiceKeyGuard(Func<bool> voiceSessionActive) : IDispos
         if (!IsSuppressionEnabled) return;
         _armedAt = Environment.TickCount64;
         _armed = true;
-        NativeInputSender.SendKey(0x74, true);
+        bool released = NativeInputSender.SendKey(0x74, true);
+        AppLogger.Info($"Remote F5 guard armed; cleanup key-up accepted={released}", "RemoteVoiceKeyGuard");
     }
 
-    public void Clear() => _armed = false;
+    public void Clear()
+    {
+        _armed = false;
+        EndShortcutHold();
+    }
 
     private IntPtr OnKeyboard(int code, IntPtr message, IntPtr data)
     {
         try
         {
-            if (code >= 0 && _armed && IsSuppressionEnabled && Marshal.ReadInt32(data) == 0x74)
+            if (code >= 0 && Marshal.ReadInt32(data) == 0x74)
             {
                 uint flags = (uint)Marshal.ReadInt32(data, 8);
                 // Let injected cleanup events through. Observe no other keys.
                 if ((flags & 0x10) == 0)
                 {
-                    if (!voiceSessionActive() && Environment.TickCount64 - _armedAt > 2000)
+                    // The app owns the injected F5 until audio drain completes.
+                    // Physical repeats can re-trigger the IME; physical key-up
+                    // can release the injected hold before our balanced key-up.
+                    if (_ownsF5)
+                    {
+                        if (message.ToInt64() is 0x101 or 0x105) _blockedUps++;
+                        else _blockedDowns++;
+                        return (IntPtr)1;
+                    }
+                    if (!IsSuppressionEnabled) return CallNextHookEx(_hook, code, message, data);
+                    bool sessionActive = voiceSessionActive();
+                    if (!sessionActive && _armed && Environment.TickCount64 - _armedAt > 2000)
                         _armed = false;
-                    else
+                    if (sessionActive || _armed)
                     {
                         // The first down may already have reached another hook.
                         // Always balance it with the real physical key-up.
@@ -75,6 +108,7 @@ public sealed class RemoteVoiceKeyGuard(Func<bool> voiceSessionActive) : IDispos
 
     public void Dispose()
     {
+        EndShortcutHold();
         _armed = false;
         if (_hook != IntPtr.Zero) UnhookWindowsHookEx(_hook);
         _hook = IntPtr.Zero;

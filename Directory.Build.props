@@ -6,5 +6,8 @@
     <!-- Allow building Windows-targeted projects on non-Windows platforms like macOS/Linux -->
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Authors>Voice Input Buddy Contributors</Authors>
+    <Product>Voice Input Buddy</Product>
+    <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
   </PropertyGroup>
 </Project>

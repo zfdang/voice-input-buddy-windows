@@ -5,6 +5,7 @@
     <RootNamespace>VoiceInputBuddy.App</RootNamespace>
     <UseWPF>true</UseWPF>
     <ApplicationIcon Condition="Exists('Resources\app.ico')">Resources\app.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 
   <ItemGroup>

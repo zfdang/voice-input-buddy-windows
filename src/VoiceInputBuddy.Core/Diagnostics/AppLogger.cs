@@ -58,6 +58,11 @@ public static class AppLogger
     {
         lock (_lock)
         {
+            if (_isInitialized && customLogDirectory == null && maxSizeBytes == null && maxArchives == null)
+            {
+                return;
+            }
+
             if (maxSizeBytes.HasValue && maxSizeBytes.Value > 1024)
             {
                 _maxFileSizeBytes = maxSizeBytes.Value;
@@ -232,7 +237,7 @@ public static class AppLogger
                 }
             }
 
-            string header = $"=== Voice Input Buddy Diagnostic Log Rotated at {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC ===\n";
+            string header = $"=== Voice Input Buddy Diagnostic Log Rotated at {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC ===" + Environment.NewLine;
             File.AppendAllText(_logFilePath, header, Encoding.UTF8);
         }
         catch (Exception ex)

@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Voice Input Buddy Contributors
+// SPDX-License-Identifier: GPL-3.0-only
+
 using VoiceInputBuddy.App.ViewModels;
 using VoiceInputBuddy.Core.Config;
 using VoiceInputBuddy.Core.Models;

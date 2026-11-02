@@ -32,9 +32,45 @@ public class NativeInputSenderTests
     [InlineData("   ")]
     [InlineData("Ctrl+NonExistentKey")]
     [InlineData("InvalidModifier+A")]
+    [InlineData("Ctrl+A+B")]
+    [InlineData("F0")]
+    [InlineData("F13")]
     public void TryParseShortcut_RejectsInvalidShortcuts(string shortcut)
     {
         bool success = NativeInputSender.TryParseShortcut(shortcut, out _, out _);
         Assert.False(success);
+    }
+
+    [Theory]
+    [InlineData("F1", true)]
+    [InlineData("F12", true)]
+    [InlineData("Alt+9", true)]
+    [InlineData("Home", true)]
+    [InlineData("End", true)]
+    [InlineData("PageUp", true)]
+    [InlineData("PageDown", true)]
+    public void TryParseShortcut_ValidatesNavigationAndFunctionKeys(string shortcut, bool expected)
+    {
+        bool success = NativeInputSender.TryParseShortcut(shortcut, out _, out _);
+        Assert.Equal(expected, success);
+    }
+
+    [Theory]
+    [InlineData(0x25, true)]  // VK_LEFT
+    [InlineData(0x28, true)]  // VK_DOWN
+    [InlineData(0x5B, true)]  // VK_LWIN
+    [InlineData(0xA3, true)]  // VK_RCONTROL
+    [InlineData(0xA2, false)] // VK_LCONTROL
+    [InlineData(0x41, false)] // 'A'
+    public void IsExtendedKey_ClassifiesExtendedKeysCorrectly(ushort vk, bool expected)
+    {
+        Assert.Equal(expected, NativeInputSender.IsExtendedKey(vk));
+    }
+
+    [Fact]
+    public void CreateKeyInput_AttachesSyntheticEventMarker()
+    {
+        var input = NativeInputSender.CreateKeyInput(0x41, false);
+        Assert.Equal(NativeInputSender.SyntheticEventMarker, input.u.ki.dwExtraInfo);
     }
 }

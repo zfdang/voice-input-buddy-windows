@@ -89,11 +89,31 @@ public static class NativeInputSender
     public const ushort VK_MEDIA_PREV_TRACK = 0xB1;
     public const ushort VK_MEDIA_PLAY_PAUSE = 0xB3;
 
+    public static readonly UIntPtr SyntheticEventMarker = new(0x56494201); // "VIB1"
+    private static readonly System.Collections.Concurrent.ConcurrentBag<ushort> _heldSyntheticKeys = new();
+
     [DllImport("user32.dll", SetLastError = true)]
     public static extern uint SendInput(uint nInputs, [In] INPUT[] pInputs, int cbSize);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern uint MapVirtualKeyW(uint uCode, uint uMapType);
+
+    [DllImport("user32.dll")]
+    private static extern short GetAsyncKeyState(int vKey);
+
+    public static bool IsKeyPhysicallyDown(ushort vk) => (GetAsyncKeyState(vk) & 0x8000) != 0;
+
+    public static void TrackHeldKey(ushort vk) => _heldSyntheticKeys.Add(vk);
+
+    public static void ReleaseAllHeldSyntheticKeys()
+    {
+        var keysToRelease = new HashSet<ushort>();
+        while (_heldSyntheticKeys.TryTake(out var key)) keysToRelease.Add(key);
+        if (keysToRelease.Count == 0) return;
+
+        var inputs = keysToRelease.Select(k => CreateKeyInput(k, isKeyUp: true)).ToArray();
+        SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
+    }
 
     public static bool IsExtendedKey(ushort vk) => vk switch
     {
@@ -182,8 +202,16 @@ public static class NativeInputSender
     {
         if (!TryParseShortcut(shortcut, out var modifiers, out ushort mainKey)) return false;
         var inputs = new List<INPUT>();
-        foreach (var mod in modifiers) inputs.Add(CreateKeyInput(mod, false));
-        if (mainKey != 0) inputs.Add(CreateKeyInput(mainKey, false));
+        foreach (var mod in modifiers)
+        {
+            inputs.Add(CreateKeyInput(mod, false));
+            TrackHeldKey(mod);
+        }
+        if (mainKey != 0)
+        {
+            inputs.Add(CreateKeyInput(mainKey, false));
+            TrackHeldKey(mainKey);
+        }
         uint sent = SendInput((uint)inputs.Count, inputs.ToArray(), Marshal.SizeOf<INPUT>());
         return sent == inputs.Count;
     }
@@ -193,7 +221,15 @@ public static class NativeInputSender
         if (!TryParseShortcut(shortcut, out var modifiers, out ushort mainKey)) return false;
         var inputs = new List<INPUT>();
         if (mainKey != 0) inputs.Add(CreateKeyInput(mainKey, true));
-        for (int i = modifiers.Count - 1; i >= 0; i--) inputs.Add(CreateKeyInput(modifiers[i], true));
+        // Do not inject KeyUp for modifiers that the user is actively holding down on their physical keyboard
+        for (int i = modifiers.Count - 1; i >= 0; i--)
+        {
+            if (!IsKeyPhysicallyDown(modifiers[i]))
+            {
+                inputs.Add(CreateKeyInput(modifiers[i], true));
+            }
+        }
+        if (inputs.Count == 0) return true;
         uint sent = SendInput((uint)inputs.Count, inputs.ToArray(), Marshal.SizeOf<INPUT>());
         return sent == inputs.Count;
     }
@@ -202,14 +238,17 @@ public static class NativeInputSender
     {
         if (!TryParseShortcut(shortcut, out var modifiers, out ushort mainKey)) return false;
 
+        // Only press and release modifiers that are not already physically held by the user
+        var ownedModifiers = modifiers.Where(m => !IsKeyPhysicallyDown(m)).ToList();
+
         var inputs = new List<INPUT>();
-        foreach (var mod in modifiers) inputs.Add(CreateKeyInput(mod, false));
+        foreach (var mod in ownedModifiers) inputs.Add(CreateKeyInput(mod, false));
         if (mainKey != 0)
         {
             inputs.Add(CreateKeyInput(mainKey, false));
             inputs.Add(CreateKeyInput(mainKey, true));
         }
-        for (int i = modifiers.Count - 1; i >= 0; i--) inputs.Add(CreateKeyInput(modifiers[i], true));
+        for (int i = ownedModifiers.Count - 1; i >= 0; i--) inputs.Add(CreateKeyInput(ownedModifiers[i], true));
 
         uint sent = SendInput((uint)inputs.Count, inputs.ToArray(), Marshal.SizeOf<INPUT>());
         return sent == inputs.Count;
@@ -231,7 +270,8 @@ public static class NativeInputSender
         };
 
         if (vk == 0) return false;
-        return SendKey(vk, false) && SendKey(vk, true);
+        var inputs = new[] { CreateKeyInput(vk, false), CreateKeyInput(vk, true) };
+        return SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>()) == inputs.Length;
     }
 
     public static bool SendUnicodeText(string text)
@@ -254,7 +294,7 @@ public static class NativeInputSender
                 type = INPUT_KEYBOARD,
                 u = new InputUnion
                 {
-                    ki = new KEYBDINPUT { wScan = c, dwFlags = KEYEVENTF_UNICODE }
+                    ki = new KEYBDINPUT { wScan = c, dwFlags = KEYEVENTF_UNICODE, dwExtraInfo = SyntheticEventMarker }
                 }
             });
             inputs.Add(new INPUT
@@ -262,7 +302,7 @@ public static class NativeInputSender
                 type = INPUT_KEYBOARD,
                 u = new InputUnion
                 {
-                    ki = new KEYBDINPUT { wScan = c, dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP }
+                    ki = new KEYBDINPUT { wScan = c, dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP, dwExtraInfo = SyntheticEventMarker }
                 }
             });
         }
@@ -288,7 +328,8 @@ public static class NativeInputSender
                 {
                     wVk = vk,
                     wScan = (ushort)MapVirtualKeyW(vk, 0),
-                    dwFlags = flags
+                    dwFlags = flags,
+                    dwExtraInfo = SyntheticEventMarker
                 }
             }
         };

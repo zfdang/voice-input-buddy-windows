@@ -15,7 +15,9 @@ public sealed class RawInputReceiver : IDisposable
     private const int WM_INPUT = 0x00FF;
     private const int RID_INPUT = 0x10000003;
     private const int RIDEV_INPUTSINK = 0x00000100;
+    private const int RIDEV_DEVNOTIFY = 0x00002000;
     private const int RIDEV_REMOVE = 0x00000001;
+    private const byte KeyboardReportId = 0xFF;
     private const uint RIDI_DEVICENAME = 0x20000007;
     private const uint RIDI_DEVICEINFO = 0x2000000b;
 
@@ -114,6 +116,7 @@ public sealed class RawInputReceiver : IDisposable
     private bool _isRegistered;
     private readonly Dictionary<IntPtr, string> _devicePathCache = new();
     private readonly Dictionary<IntPtr, Dictionary<byte, HashSet<RemoteButton>>> _deviceReportButtons = new();
+    private readonly HashSet<IntPtr> _devicesHoldingF5 = new();
     private readonly object _lock = new();
 
     public static Guid? GetDeviceContainerId(string devicePath)
@@ -196,6 +199,7 @@ public sealed class RawInputReceiver : IDisposable
                     _deviceReportButtons.Remove(hDevice.Value);
                 }
                 _devicePathCache.Remove(hDevice.Value);
+                _devicesHoldingF5.Remove(hDevice.Value);
             }
             else
             {
@@ -208,6 +212,7 @@ public sealed class RawInputReceiver : IDisposable
                 }
                 _deviceReportButtons.Clear();
                 _devicePathCache.Clear();
+                _devicesHoldingF5.Clear();
             }
         }
 
@@ -352,14 +357,14 @@ public sealed class RawInputReceiver : IDisposable
             {
                 usUsagePage = 0x0C, // Consumer Control
                 usUsage = 0x01,     // Consumer Control Device
-                dwFlags = RIDEV_INPUTSINK,
+                dwFlags = RIDEV_INPUTSINK | RIDEV_DEVNOTIFY,
                 hwndTarget = hwnd
             },
             new()
             {
                 usUsagePage = 0x01, // Generic Desktop Controls
                 usUsage = 0x06,     // Keyboard
-                dwFlags = RIDEV_INPUTSINK,
+                dwFlags = RIDEV_INPUTSINK | RIDEV_DEVNOTIFY,
                 hwndTarget = hwnd
             }
         };
@@ -427,12 +432,27 @@ public sealed class RawInputReceiver : IDisposable
                 ushort vkey = (ushort)Marshal.ReadInt16(buffer, headerSize + 6);
                 bool isDown = (flags & 1) == 0;
 
-                if (vkey == 0x74 && isDown)
+                if (vkey == 0x74)
                 {
-                    PhysicalVoiceKeyPressed?.Invoke();
-                    return;
+                    bool shouldArm = false;
+                    lock (_lock)
+                    {
+                        if (isDown)
+                        {
+                            shouldArm = _devicesHoldingF5.Add(hDevice);
+                        }
+                        else
+                        {
+                            _devicesHoldingF5.Remove(hDevice);
+                        }
+                    }
+
+                    if (shouldArm)
+                    {
+                        PhysicalVoiceKeyPressed?.Invoke();
+                    }
+                    return; // ATVV owns voice session start/stop.
                 }
-                if (vkey == 0x74) return; // ATVV owns voice session start/stop.
 
                 ushort makeCode = (ushort)Marshal.ReadInt16(buffer, headerSize);
                 var btn = MapVirtualKeyToRemoteButton(vkey, makeCode);
@@ -451,10 +471,10 @@ public sealed class RawInputReceiver : IDisposable
                         _deviceReportButtons[hDevice] = reportMap;
                     }
 
-                    if (!reportMap.TryGetValue(0, out var pressedButtons))
+                    if (!reportMap.TryGetValue(KeyboardReportId, out var pressedButtons))
                     {
                         pressedButtons = new HashSet<RemoteButton>();
-                        reportMap[0] = pressedButtons;
+                        reportMap[KeyboardReportId] = pressedButtons;
                     }
 
                     if (isDown)
@@ -523,6 +543,33 @@ public sealed class RawInputReceiver : IDisposable
                     }
 
                     byte reportId = GetReportId(slice);
+
+                    if (currentButtons.Count == 0 && reportId == 0)
+                    {
+                        // All-zero generic release frame: release all non-keyboard HID buttons
+                        foreach (var (rId, btns) in reportMap)
+                        {
+                            if (rId == KeyboardReportId) continue;
+                            foreach (var btn in btns)
+                            {
+                                hidEvents.Add((btn, false));
+                            }
+                            btns.Clear();
+                        }
+                        continue;
+                    }
+
+                    if (currentButtons.Count > 1)
+                    {
+                        // G9N9N multi-key chords drop release frames; dispatch as momentary taps
+                        foreach (var btn in currentButtons)
+                        {
+                            hidEvents.Add((btn, true));
+                            hidEvents.Add((btn, false));
+                        }
+                        continue;
+                    }
+
                     if (!reportMap.TryGetValue(reportId, out var pressedButtons))
                     {
                         pressedButtons = new HashSet<RemoteButton>();

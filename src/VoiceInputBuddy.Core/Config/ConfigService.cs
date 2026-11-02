@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using VoiceInputBuddy.Core.Diagnostics;
 using VoiceInputBuddy.Core.Models;
 
@@ -12,7 +13,8 @@ public class ConfigService
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
-        PropertyNameCaseInsensitive = true
+        PropertyNameCaseInsensitive = true,
+        Converters = { new JsonStringEnumConverter() }
     };
 
     private readonly object _lock = new();
@@ -68,13 +70,29 @@ public class ConfigService
             }
 
             // Fallback to backup if main file was corrupt or missing
-            if (File.Exists(_backupFilePath) && TryLoadFile(_backupFilePath, out var backupConfig))
+            if (File.Exists(_backupFilePath))
             {
-                AppLogger.Warn($"Configuration restored from backup {_backupFilePath}", "ConfigService");
-                Current = backupConfig;
-                // Re-persist clean state to restore main config.json
-                Save();
-                return Current;
+                if (TryLoadFile(_backupFilePath, out var backupConfig))
+                {
+                    AppLogger.Warn($"Configuration restored from backup {_backupFilePath}", "ConfigService");
+                    Current = backupConfig;
+                    // Re-persist clean state to restore main config.json
+                    Save();
+                    return Current;
+                }
+                else
+                {
+                    string corruptBackup = _backupFilePath + $".corrupt.{DateTime.UtcNow:yyyyMMddHHmmss}";
+                    try
+                    {
+                        File.Move(_backupFilePath, corruptBackup, overwrite: true);
+                        AppLogger.Warn($"Preserved corrupt backup file as {corruptBackup}", "ConfigService");
+                    }
+                    catch (Exception ex)
+                    {
+                        AppLogger.Warn($"Could not move corrupt backup file: {ex.Message}", "ConfigService");
+                    }
+                }
             }
 
             Current = new AppConfig();
@@ -99,6 +117,10 @@ public class ConfigService
             {
                 parsed.InputTool ??= new();
                 parsed.Devices ??= new();
+                foreach (var dev in parsed.Devices)
+                {
+                    dev.Mappings ??= RemoteDevice.CreateDefaultMappings(dev.ModelType);
+                }
                 config = parsed;
                 return true;
             }
@@ -116,6 +138,8 @@ public class ConfigService
     {
         lock (_lock)
         {
+            string tempFile = _configFilePath + $".{Guid.NewGuid():N}.tmp";
+            bool cleanupNeeded = true;
             try
             {
                 string? dir = Path.GetDirectoryName(_configFilePath);
@@ -124,7 +148,6 @@ public class ConfigService
                     Directory.CreateDirectory(dir);
                 }
 
-                string tempFile = _configFilePath + ".tmp";
                 string json = JsonSerializer.Serialize(Current, JsonOptions);
                 File.WriteAllText(tempFile, json);
 
@@ -133,17 +156,20 @@ public class ConfigService
                     try
                     {
                         File.Replace(tempFile, _configFilePath, _backupFilePath, ignoreMetadataErrors: true);
+                        cleanupNeeded = false;
                     }
                     catch (Exception ex) when (ex is IOException or PlatformNotSupportedException)
                     {
                         AppLogger.Warn($"File.Replace failed ({ex.Message}), falling back to direct copy", "ConfigService");
                         File.Copy(_configFilePath, _backupFilePath, overwrite: true);
                         File.Move(tempFile, _configFilePath, overwrite: true);
+                        cleanupNeeded = false;
                     }
                 }
                 else
                 {
                     File.Move(tempFile, _configFilePath, overwrite: true);
+                    cleanupNeeded = false;
                     try
                     {
                         File.Copy(_configFilePath, _backupFilePath, overwrite: true);
@@ -156,6 +182,13 @@ public class ConfigService
             catch (Exception ex)
             {
                 AppLogger.Error($"Failed to save configuration to {_configFilePath}", ex, "ConfigService");
+            }
+            finally
+            {
+                if (cleanupNeeded && File.Exists(tempFile))
+                {
+                    try { File.Delete(tempFile); } catch { }
+                }
             }
         }
     }

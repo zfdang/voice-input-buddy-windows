@@ -1,5 +1,9 @@
+// Copyright (C) 2026 Voice Input Buddy Contributors
+// SPDX-License-Identifier: GPL-3.0-only
+
 using VoiceInputBuddy.Core.Audio;
 using VoiceInputBuddy.Core.Bluetooth;
+using VoiceInputBuddy.Core.Models;
 using VoiceInputBuddy.Core.Protocols;
 using Xunit;
 
@@ -626,6 +630,75 @@ public class AudioDecoderAndProtocolTests
 
             Assert.NotNull(configService.Current.InputTool);
             Assert.NotNull(configService.Current.Devices);
+        }
+        finally
+        {
+            Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
+    public void PcmPostprocessor_HandlesNonFiniteAndClampedGains()
+    {
+        var postprocessor = new PcmPostprocessor();
+        short[] samplesNan = [1000, 1000];
+        postprocessor.Process(samplesNan, float.NaN);
+        Assert.Equal(1000, samplesNan[0]);
+
+        short[] samplesMin = [1000, 1000];
+        postprocessor.Process(samplesMin, -5.0f); // clamped to 0.1f
+        Assert.Equal(100, samplesMin[0]);
+    }
+
+    [Fact]
+    public void PcmPostprocessor_PreservesFilterContinuityAcrossFrames()
+    {
+        var postprocessor = new PcmPostprocessor();
+        short[] frame1 = [1000, 2000, 3000];
+        postprocessor.Process(frame1, 1.0f);
+
+        short[] frame2 = [4000, 5000];
+        postprocessor.Process(frame2, 1.0f);
+
+        // First sample of frame2: value=4000, last=3000, beforeLast=2000 => (2000 + 6000 + 4000) >> 2 = 3000
+        Assert.Equal(3000, frame2[0]);
+    }
+
+    [Fact]
+    public void XiaomiProtocol_DetectModelType_DetectsARN9AndGY3LE()
+    {
+        Assert.Equal(RemoteModelType.XiaomiARN9, XiaomiProtocol.DetectModelType("arn9"));
+        Assert.Equal(RemoteModelType.XiaomiARN9, XiaomiProtocol.DetectModelType("Xiaomi Remote ARN9"));
+        Assert.Equal(RemoteModelType.GoogleGY3LE, XiaomiProtocol.DetectModelType("GY3LE"));
+        Assert.True(G9N9NProtocol.IsCandidate("Google TV Streamer"));
+        Assert.True(G9N9NProtocol.IsCandidate("GY3LE"));
+    }
+
+    [Fact]
+    public void ConfigService_JsonStringEnumConverter_SerializesAndDeserializesEnumsAsString()
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(), $"vib-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            string mainFile = Path.Combine(tempDir, "config.json");
+            string jsonWithStringEnums = """
+            {
+                "Version": 1,
+                "Language": "system",
+                "InputTool": {
+                    "Tool": "WeChatInput",
+                    "TriggerMode": "ClickToToggle",
+                    "Shortcut": "Ctrl+Win"
+                },
+                "Devices": []
+            }
+            """;
+            File.WriteAllText(mainFile, jsonWithStringEnums);
+
+            var configService = new VoiceInputBuddy.Core.Config.ConfigService(mainFile);
+            Assert.Equal(VoiceInputBuddy.Core.Models.TargetInputTool.WeChatInput, configService.Current.InputTool.Tool);
+            Assert.Equal(VoiceInputBuddy.Core.Models.VoiceTriggerMode.ClickToToggle, configService.Current.InputTool.TriggerMode);
         }
         finally
         {

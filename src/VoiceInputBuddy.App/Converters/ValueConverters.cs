@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Data;
 using System.Windows.Media;
+using VoiceInputBuddy.Core.Models;
 
 namespace VoiceInputBuddy.App.Converters;
 
@@ -102,6 +103,21 @@ public sealed class EqualValueToVisibilityConverter : IValueConverter
         throw new NotSupportedException();
     }
 }
+public sealed class EqualValueToBrushConverter : IValueConverter
+{
+    public Brush ActiveBrush { get; set; } = new SolidColorBrush(Color.FromRgb(0, 122, 204));
+    public Brush InactiveBrush { get; set; } = new SolidColorBrush(Color.FromRgb(0x3E, 0x3E, 0x42));
+
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        string? valStr = value?.ToString();
+        string? paramStr = parameter?.ToString();
+        return string.Equals(valStr, paramStr, StringComparison.OrdinalIgnoreCase) ? ActiveBrush : InactiveBrush;
+    }
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+
 public sealed class EqualValueToBoolConverter : IValueConverter
 {
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
@@ -113,12 +129,58 @@ public sealed class EqualValueToBoolConverter : IValueConverter
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
-        if (value is true && parameter is string paramStr && targetType.IsEnum)
+        if (value is true && parameter is string paramStr)
         {
-            return Enum.Parse(targetType, paramStr);
+            var enumType = Nullable.GetUnderlyingType(targetType) ?? targetType;
+            if (enumType.IsEnum && Enum.TryParse(enumType, paramStr, true, out var result))
+            {
+                return result;
+            }
         }
         return Binding.DoNothing;
     }
+}
+
+public sealed class BatteryVisibilityConverter : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        if (value is int level && level >= 0) return Visibility.Visible;
+        return Visibility.Collapsed;
+    }
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+
+public sealed class EnumToDisplayNameConverter : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        return value switch
+        {
+            ButtonActionType.None => "无动作",
+            ButtonActionType.KeyboardShortcut => "模拟键盘快捷键",
+            ButtonActionType.MediaControl => "多媒体控制",
+            ButtonActionType.TextSnippet => "文本片段快速输入",
+            ButtonActionType.ContinuousRepeat => "持续连发 (连按)",
+            MediaCommand.None => "无",
+            MediaCommand.PlayPause => "播放 / 暂停",
+            MediaCommand.VolumeUp => "音量加 (+)",
+            MediaCommand.VolumeDown => "音量减 (-)",
+            MediaCommand.Mute => "静音",
+            MediaCommand.NextTrack => "下一首",
+            MediaCommand.PreviousTrack => "上一首",
+            TargetInputTool.WeChatInput => "微信输入法",
+            TargetInputTool.DoubaoInput => "豆包输入法 / 客户端",
+            TargetInputTool.WindowsDictation => "Windows 语音听写 (Win+H)",
+            TargetInputTool.Typeless => "Typeless 智能转写",
+            VoiceTriggerMode.HoldToTalk => "按住说话 (Hold to Talk)",
+            VoiceTriggerMode.ClickToToggle => "点按切换 (Click to Toggle)",
+            _ => value?.ToString() ?? string.Empty
+        };
+    }
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
 }
 
 public sealed class GainToDbTextConverter : IValueConverter

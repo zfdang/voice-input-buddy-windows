@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Voice Input Buddy Contributors
+// SPDX-License-Identifier: GPL-3.0-only
+
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Input;
@@ -11,6 +14,16 @@ public partial class OnboardingWindow : Window
     {
         InitializeComponent();
         Loaded += OnLoaded;
+        Closed += OnClosed;
+    }
+
+    private void OnClosed(object? sender, EventArgs e)
+    {
+        if (DataContext is OnboardingViewModel vm)
+        {
+            vm.PropertyChanged -= OnVmPropertyChanged;
+            vm.Dispose();
+        }
     }
 
     protected override void OnPreviewKeyDown(KeyEventArgs e)

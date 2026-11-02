@@ -83,6 +83,7 @@ public static class AppLogger
                 Directory.CreateDirectory(_logDirectory);
                 _logFilePath = Path.Combine(_logDirectory, "app.log");
                 _isInitialized = true;
+                _lastRotationFailureTime = DateTime.MinValue;
 
                 // Write session start header if file is empty or new
                 if (!File.Exists(_logFilePath) || new FileInfo(_logFilePath).Length == 0)
@@ -107,6 +108,7 @@ public static class AppLogger
             _logFilePath = string.Empty;
             _maxFileSizeBytes = 5 * 1024 * 1024;
             _maxArchiveCount = 3;
+            _lastRotationFailureTime = DateTime.MinValue;
             _isEnabled = true;
         }
     }

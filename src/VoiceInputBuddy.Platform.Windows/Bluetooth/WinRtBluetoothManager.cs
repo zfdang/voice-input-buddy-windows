@@ -27,13 +27,14 @@ public sealed class WinRtBluetoothManager : IBluetoothManager
     private readonly WasapiAudioPlayer _audioPlayer = new();
     private readonly ATVVFrameAccumulator _frameAccumulator = new();
     private readonly object _audioLock = new();
+    private readonly PcmPostprocessor _postprocessor = new();
     private short[] _decodedBuffer = new short[1024];
 
     private byte _currentSessionId = 0;
     private byte? _lastEndedSessionId;
     private long _lastEndedSessionTimeMs;
     private int _frameSize = 120;
-    private BluetoothSessionState _sessionState = BluetoothSessionState.Idle;
+    private volatile BluetoothSessionState _sessionState = BluetoothSessionState.Idle;
     private bool _cancelOpenPending = false;
     private bool _voiceSessionStartedEmitted = false;
     private bool _audioStopReceived = false;
@@ -57,6 +58,7 @@ public sealed class WinRtBluetoothManager : IBluetoothManager
     public bool IsConnected => _connectedDevice != null && _connectedDevice.ConnectionStatus == BluetoothConnectionStatus.Connected;
     public bool IsReady { get; private set; }
     public bool IsStreaming => _sessionState == BluetoothSessionState.Streaming;
+    public float CurrentGain { get; set; } = 1.0f;
     public BluetoothSessionState SessionState => _sessionState;
     public string ConnectedDeviceName => _connectedDevice?.Name ?? string.Empty;
     public Guid? ConnectedDeviceContainerId { get; private set; }
@@ -161,6 +163,7 @@ public sealed class WinRtBluetoothManager : IBluetoothManager
         void CleanupAttempt(BluetoothLEDevice? localDev)
         {
             localDev?.Dispose();
+            bool shouldDisconnect = false;
             lock (_stateLock)
             {
                 if (_gattService != null)
@@ -171,8 +174,13 @@ public sealed class WinRtBluetoothManager : IBluetoothManager
 
                 if (targetConnGen == _connectionGeneration)
                 {
-                    Disconnect();
+                    shouldDisconnect = true;
                 }
+            }
+
+            if (shouldDisconnect)
+            {
+                Disconnect();
             }
         }
 
@@ -470,6 +478,7 @@ public sealed class WinRtBluetoothManager : IBluetoothManager
             _audioGeneration++;
             _frameAccumulator.Reset();
             _decoder.Reset();
+            _postprocessor.Reset();
         }
 
         try
@@ -509,10 +518,11 @@ public sealed class WinRtBluetoothManager : IBluetoothManager
                 if (_sessionState != BluetoothSessionState.Opening || _cancelOpenPending)
                 {
                     AppLogger.Info("Fast release detected during Opening, closing mic immediately", "BluetoothManager");
+                    _lastEndedSessionId = _currentSessionId;
+                    _lastEndedSessionTimeMs = Environment.TickCount64;
                     _ = SendClosePacketAsync(_currentSessionId);
                     _audioPlayer.Stop();
                     _sessionState = BluetoothSessionState.Idle;
-                    _cancelOpenPending = false;
                     return false;
                 }
 
@@ -683,6 +693,7 @@ public sealed class WinRtBluetoothManager : IBluetoothManager
     {
         int currentAudioGen = Volatile.Read(ref _audioGeneration);
         int frameSize;
+        float gain;
         lock (_stateLock)
         {
             if (sender != _audioCharacteristic) return;
@@ -691,10 +702,13 @@ public sealed class WinRtBluetoothManager : IBluetoothManager
                 return;
             }
             frameSize = _frameSize;
+            gain = CurrentGain;
         }
 
         CryptographicBuffer.CopyToByteArray(args.CharacteristicValue, out byte[] data);
         if (data.Length == 0) return;
+
+        float? latestLevel = null;
 
         // Process audio in _audioLock ONLY (never nest _stateLock inside to prevent deadlock)
         lock (_audioLock)
@@ -721,11 +735,17 @@ public sealed class WinRtBluetoothManager : IBluetoothManager
                 int count = _decoder.Decode(frame, _decodedBuffer);
                 var sampleSpan = _decodedBuffer.AsSpan(0, count);
 
+                _postprocessor.Process(sampleSpan, gain);
+
                 _audioPlayer.WriteSamples(sampleSpan);
 
-                float level = AudioLevelMeter.CalculateRms(sampleSpan);
-                AudioLevelChanged?.Invoke(level);
+                latestLevel = AudioLevelMeter.CalculateRms(sampleSpan);
             }
+        }
+
+        if (latestLevel.HasValue)
+        {
+            AudioLevelChanged?.Invoke(latestLevel.Value);
         }
     }
 
@@ -998,6 +1018,7 @@ public sealed class WinRtBluetoothManager : IBluetoothManager
             _audioGeneration++;
             _frameAccumulator.Reset();
             _decoder.Reset();
+            _postprocessor.Reset();
         }
 
         if (emitEnded)

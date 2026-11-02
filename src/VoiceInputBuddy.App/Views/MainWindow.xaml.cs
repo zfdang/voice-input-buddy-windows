@@ -72,12 +72,18 @@ public partial class MainWindow : Window
     private EnvironmentPage? _environmentPage;
     private SettingsPage? _settingsPage;
 
+    private bool _isSystemShutdown = false;
+
     public MainWindow()
     {
         InitializeComponent();
         Loaded += OnLoaded;
         Closing += OnWindowClosing;
         Closed += OnWindowClosed;
+        if (Application.Current != null)
+        {
+            Application.Current.SessionEnding += (_, _) => { _isSystemShutdown = true; };
+        }
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -116,6 +122,12 @@ public partial class MainWindow : Window
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
+        if (msg is 0x0011 /* WM_QUERYENDSESSION */ or 0x0016 /* WM_ENDSESSION */)
+        {
+            _isSystemShutdown = true;
+            return IntPtr.Zero;
+        }
+
         if (_wmTaskbarCreated != 0 && (uint)msg == _wmTaskbarCreated)
         {
             _trayIconCreated = false;
@@ -153,6 +165,11 @@ public partial class MainWindow : Window
             WindowState = WindowState.Normal;
         }
         Activate();
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd != IntPtr.Zero)
+        {
+            SetForegroundWindow(hwnd);
+        }
     }
 
     private void ShowTrayContextMenu()
@@ -185,7 +202,7 @@ public partial class MainWindow : Window
 
     private void OnWindowClosing(object? sender, CancelEventArgs e)
     {
-        if (IsExplicitExit) return;
+        if (IsExplicitExit || _isSystemShutdown) return;
 
         if (DataContext is MainViewModel vm && vm.SettingsVm.MinimizeToTrayOnClose)
         {

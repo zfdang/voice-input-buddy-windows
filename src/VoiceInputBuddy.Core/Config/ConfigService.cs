@@ -43,23 +43,17 @@ public class ConfigService
     {
         lock (_lock)
         {
-            if (File.Exists(_configFilePath) && TryLoadFile(_configFilePath, out var config))
+            bool hasMain = File.Exists(_configFilePath);
+            if (hasMain && TryLoadFile(_configFilePath, out var config))
             {
                 Current = config;
                 AppLogger.Info($"Configuration loaded from {_configFilePath}. Devices: {Current.Devices.Count}, Selected: {Current.SelectedDeviceId ?? "none"}", "ConfigService");
                 return Current;
             }
 
-            // Fallback to backup if main file is corrupt or empty
-            if (File.Exists(_backupFilePath) && TryLoadFile(_backupFilePath, out var backupConfig))
-            {
-                AppLogger.Warn($"Main configuration was corrupt; successfully restored from backup {_backupFilePath}", "ConfigService");
-                Current = backupConfig;
-                return Current;
-            }
-
-            // Preserve corrupted file for diagnostics rather than silently destroying it
-            if (File.Exists(_configFilePath))
+            // If main file exists but failed to load, quarantine it immediately
+            // so subsequent saves or backups do not overwrite valid backups with corrupted data
+            if (hasMain)
             {
                 string corruptPath = _configFilePath + $".corrupt.{DateTime.UtcNow:yyyyMMddHHmmss}";
                 try
@@ -71,6 +65,16 @@ public class ConfigService
                 {
                     AppLogger.Warn($"Could not move corrupt config file: {ex.Message}", "ConfigService");
                 }
+            }
+
+            // Fallback to backup if main file was corrupt or missing
+            if (File.Exists(_backupFilePath) && TryLoadFile(_backupFilePath, out var backupConfig))
+            {
+                AppLogger.Warn($"Configuration restored from backup {_backupFilePath}", "ConfigService");
+                Current = backupConfig;
+                // Re-persist clean state to restore main config.json
+                Save();
+                return Current;
             }
 
             Current = new AppConfig();
@@ -93,6 +97,8 @@ public class ConfigService
             var parsed = JsonSerializer.Deserialize<AppConfig>(json, JsonOptions);
             if (parsed != null)
             {
+                parsed.InputTool ??= new();
+                parsed.Devices ??= new();
                 config = parsed;
                 return true;
             }
@@ -124,7 +130,16 @@ public class ConfigService
 
                 if (File.Exists(_configFilePath))
                 {
-                    File.Replace(tempFile, _configFilePath, _backupFilePath, ignoreMetadataErrors: true);
+                    try
+                    {
+                        File.Replace(tempFile, _configFilePath, _backupFilePath, ignoreMetadataErrors: true);
+                    }
+                    catch (Exception ex) when (ex is IOException or PlatformNotSupportedException)
+                    {
+                        AppLogger.Warn($"File.Replace failed ({ex.Message}), falling back to direct copy", "ConfigService");
+                        File.Copy(_configFilePath, _backupFilePath, overwrite: true);
+                        File.Move(tempFile, _configFilePath, overwrite: true);
+                    }
                 }
                 else
                 {

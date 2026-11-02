@@ -84,127 +84,133 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         _rawInputReceiver.DeviceFilter = IsTargetDevice;
 
-        _bluetoothManager.ConnectionStatusChanged += (connected, name) =>
-        {
-            void Update()
-            {
-                IsConnected = connected;
-                ConnectedDeviceName = connected ? name : "未连接设备";
-                if (!connected)
-                {
-                    ReleaseHeldVoiceShortcut();
-                    _voiceKeyGuard.Clear();
-                    StopRepeatTimer();
-                    _rawInputReceiver.ResetDeviceState();
-                }
-            }
+        _bluetoothManager.ConnectionStatusChanged += OnConnectionStatusChanged;
+        _bluetoothManager.AudioLevelChanged += OnAudioLevelChanged;
+        _bluetoothManager.VoiceSessionStarted += OnVoiceSessionStarted;
+        _bluetoothManager.VoiceSessionEnded += OnVoiceSessionEnded;
+        _bluetoothManager.VoiceButtonPressed += OnVoiceButtonPressed;
+        _rawInputReceiver.ButtonEvent += OnRawButtonEvent;
+    }
 
-            if (System.Windows.Application.Current?.Dispatcher != null && !System.Windows.Application.Current.Dispatcher.CheckAccess())
-            {
-                System.Windows.Application.Current.Dispatcher.BeginInvoke(Update);
-            }
-            else
-            {
-                Update();
-            }
-        };
-
-        _bluetoothManager.AudioLevelChanged += (level) =>
+    private void OnConnectionStatusChanged(bool connected, string name)
+    {
+        void Update()
         {
-            if (System.Windows.Application.Current?.Dispatcher != null && !System.Windows.Application.Current.Dispatcher.CheckAccess())
+            IsConnected = connected;
+            ConnectedDeviceName = connected ? name : "未连接设备";
+            if (!connected)
             {
-                System.Windows.Application.Current.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Render, () =>
-                {
-                    CurrentAudioLevel = level;
-                });
+                ReleaseHeldVoiceShortcut();
+                _voiceKeyGuard.Clear();
+                StopRepeatTimer();
+                _rawInputReceiver.ResetDeviceState();
             }
-            else
+        }
+
+        if (System.Windows.Application.Current?.Dispatcher != null && !System.Windows.Application.Current.Dispatcher.CheckAccess())
+        {
+            System.Windows.Application.Current.Dispatcher.BeginInvoke(Update);
+        }
+        else
+        {
+            Update();
+        }
+    }
+
+    private void OnAudioLevelChanged(float level)
+    {
+        if (System.Windows.Application.Current?.Dispatcher != null && !System.Windows.Application.Current.Dispatcher.CheckAccess())
+        {
+            System.Windows.Application.Current.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Render, () =>
             {
                 CurrentAudioLevel = level;
-            }
-        };
-
-        _bluetoothManager.VoiceSessionStarted += () =>
+            });
+        }
+        else
         {
-            void Update()
+            CurrentAudioLevel = level;
+        }
+    }
+
+    private void OnVoiceSessionStarted()
+    {
+        void Update()
+        {
+            IsVoiceActive = true;
+            if (ActiveOnboardingVm is { CurrentStep: not 7 }) return;
+            UpdateVoiceKeyGuard();
+            // ATVV is itself a verified remote source. Some Windows BLE HID
+            // paths do not deliver a source-bearing F5 Raw Input event, so
+            // relying solely on PhysicalVoiceKeyPressed leaves F5 held when
+            // the IME chord is injected.
+            _voiceKeyGuard.Arm();
+            var currentConfig = _configService.Current.InputTool;
+            var session = new ActiveVoiceSession(currentConfig.TriggerMode, currentConfig.Shortcut, currentConfig.Tool);
+            _activeVoiceSession = session;
+            AppLogger.Info($"Voice session started: Tool={session.Tool}, Mode={session.TriggerMode}, Shortcut='{session.Shortcut}'", "MainViewModel");
+            if (session.TriggerMode == VoiceTriggerMode.HoldToTalk)
             {
-                IsVoiceActive = true;
-                if (ActiveOnboardingVm is { CurrentStep: not 7 }) return;
-                UpdateVoiceKeyGuard();
-                // ATVV is itself a verified remote source. Some Windows BLE HID
-                // paths do not deliver a source-bearing F5 Raw Input event, so
-                // relying solely on PhysicalVoiceKeyPressed leaves F5 held when
-                // the IME chord is injected.
-                _voiceKeyGuard.Arm();
-                var currentConfig = _configService.Current.InputTool;
-                var session = new ActiveVoiceSession(currentConfig.TriggerMode, currentConfig.Shortcut, currentConfig.Tool);
-                _activeVoiceSession = session;
-                AppLogger.Info($"Voice session started: Tool={session.Tool}, Mode={session.TriggerMode}, Shortcut='{session.Shortcut}'", "MainViewModel");
+                _voiceKeyGuard.BeginShortcutHold(session.Shortcut);
+                bool sent = NativeInputSender.SendShortcutDown(session.Shortcut);
+                if (!sent) _voiceKeyGuard.EndShortcutHold();
+                AppLogger.Info($"Input tool shortcut down: Success={sent}", "MainViewModel");
+            }
+            else
+            {
+                bool sent = NativeInputSender.SendShortcutClick(session.Shortcut);
+                AppLogger.Info($"Input tool shortcut click: Success={sent}", "MainViewModel");
+            }
+        }
+
+        if (System.Windows.Application.Current?.Dispatcher != null && !System.Windows.Application.Current.Dispatcher.CheckAccess())
+        {
+            System.Windows.Application.Current.Dispatcher.BeginInvoke(Update);
+        }
+        else
+        {
+            Update();
+        }
+    }
+
+    private void OnVoiceSessionEnded()
+    {
+        void Update()
+        {
+            _voiceKeyGuard.Clear();
+            IsVoiceActive = false;
+            CurrentAudioLevel = 0f;
+            if (_activeVoiceSession is { } session)
+            {
+                _activeVoiceSession = null;
+                AppLogger.Info($"Voice session ended: Mode={session.TriggerMode}, Shortcut='{session.Shortcut}'", "MainViewModel");
                 if (session.TriggerMode == VoiceTriggerMode.HoldToTalk)
                 {
-                    _voiceKeyGuard.BeginShortcutHold(session.Shortcut);
-                    bool sent = NativeInputSender.SendShortcutDown(session.Shortcut);
-                    if (!sent) _voiceKeyGuard.EndShortcutHold();
-                    AppLogger.Info($"Input tool shortcut down: Success={sent}", "MainViewModel");
+                    NativeInputSender.SendShortcutUp(session.Shortcut);
                 }
-                else
+                else if (session.TriggerMode == VoiceTriggerMode.ClickToToggle)
                 {
-                    bool sent = NativeInputSender.SendShortcutClick(session.Shortcut);
-                    AppLogger.Info($"Input tool shortcut click: Success={sent}", "MainViewModel");
+                    NativeInputSender.SendShortcutClick(session.Shortcut);
                 }
             }
+        }
 
-            if (System.Windows.Application.Current?.Dispatcher != null && !System.Windows.Application.Current.Dispatcher.CheckAccess())
-            {
-                System.Windows.Application.Current.Dispatcher.BeginInvoke(Update);
-            }
-            else
-            {
-                Update();
-            }
-        };
-
-        _bluetoothManager.VoiceSessionEnded += () =>
+        if (System.Windows.Application.Current?.Dispatcher != null && !System.Windows.Application.Current.Dispatcher.CheckAccess())
         {
-            void Update()
-            {
-                _voiceKeyGuard.Clear();
-                IsVoiceActive = false;
-                CurrentAudioLevel = 0f;
-                if (_activeVoiceSession is { } session)
-                {
-                    _activeVoiceSession = null;
-                    AppLogger.Info($"Voice session ended: Mode={session.TriggerMode}, Shortcut='{session.Shortcut}'", "MainViewModel");
-                    if (session.TriggerMode == VoiceTriggerMode.HoldToTalk)
-                    {
-                        NativeInputSender.SendShortcutUp(session.Shortcut);
-                    }
-                    else if (session.TriggerMode == VoiceTriggerMode.ClickToToggle)
-                    {
-                        NativeInputSender.SendShortcutClick(session.Shortcut);
-                    }
-                }
-            }
-
-            if (System.Windows.Application.Current?.Dispatcher != null && !System.Windows.Application.Current.Dispatcher.CheckAccess())
-            {
-                System.Windows.Application.Current.Dispatcher.BeginInvoke(Update);
-            }
-            else
-            {
-                Update();
-            }
-        };
-
-        _rawInputReceiver.ButtonEvent += OnRawButtonEvent;
-        _bluetoothManager.VoiceButtonPressed += () =>
+            System.Windows.Application.Current.Dispatcher.BeginInvoke(Update);
+        }
+        else
         {
-            App.Current?.Dispatcher.BeginInvoke(new Action(() =>
-            {
-                if (ActiveOnboardingVm?.CurrentStep == 4)
-                    ActiveOnboardingVm.NotifyButtonPressed(RemoteButton.Voice);
-            }));
-        };
+            Update();
+        }
+    }
+
+    private void OnVoiceButtonPressed()
+    {
+        App.Current?.Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (ActiveOnboardingVm?.CurrentStep == 4)
+                ActiveOnboardingVm.NotifyButtonPressed(RemoteButton.Voice);
+        }));
     }
 
     partial void OnActivePageNameChanged(string value)
@@ -247,6 +253,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         if (!_deviceAdmissionLog.TryGetValue(hDevice, out var previous) ||
             previous != (targetContainerId, accepted))
         {
+            if (_deviceAdmissionLog.Count > 100) _deviceAdmissionLog.Clear();
             _deviceAdmissionLog[hDevice] = (targetContainerId, accepted);
             AppLogger.Info($"RawInput device admission: Accepted={accepted}, TargetContainer={targetContainerId}, " +
                 $"InputContainer={RawInputReceiver.GetDeviceContainerId(devicePath)}, Path='{devicePath}'", "MainViewModel");
@@ -307,15 +314,36 @@ public partial class MainViewModel : ObservableObject, IDisposable
                     int currentGen = _repeatGeneration;
                     _repeatTimer = new System.Threading.Timer(_ =>
                     {
-                        if (Volatile.Read(ref _repeatGeneration) != currentGen) return;
-                        if (!_bluetoothManager.IsConnected || ActiveOnboardingVm != null)
+                        try
                         {
-                            StopRepeatTimer();
-                            return;
+                            if (Volatile.Read(ref _repeatGeneration) != currentGen) return;
+                            if (!_bluetoothManager.IsConnected || ActiveOnboardingVm != null)
+                            {
+                                StopRepeatTimer();
+                                return;
+                            }
+
+                            lock (_repeatLock)
+                            {
+                                if (_repeatGeneration != currentGen || _heldButton != capturedMapping.Button) return;
+                            }
+
+                            AppLogger.Debug($"Repeating button action: {capturedMapping.Button} ({capturedMapping.ClickAction})", "MainViewModel");
+                            ExecuteButtonAction(capturedMapping.ClickAction, capturedMapping.ClickShortcut, capturedMapping.ClickMedia, capturedMapping.ClickText);
+
+                            lock (_repeatLock)
+                            {
+                                if (_repeatGeneration == currentGen && _heldButton == capturedMapping.Button)
+                                {
+                                    _repeatTimer?.Change(100, Timeout.Infinite);
+                                }
+                            }
                         }
-                        AppLogger.Debug($"Repeating button action: {capturedMapping.Button} ({capturedMapping.ClickAction})", "MainViewModel");
-                        ExecuteButtonAction(capturedMapping.ClickAction, capturedMapping.ClickShortcut, capturedMapping.ClickMedia, capturedMapping.ClickText);
-                    }, null, 400, 100);
+                        catch (Exception ex)
+                        {
+                            AppLogger.Error("Exception in button repeat timer", ex, "MainViewModel");
+                        }
+                    }, null, 400, Timeout.Infinite);
                 }
             }
         }
@@ -345,6 +373,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
             {
                 AppLogger.Info($"Releasing held voice shortcut: Shortcut='{session.Shortcut}'", "MainViewModel");
                 NativeInputSender.SendShortcutUp(session.Shortcut);
+            }
+            else if (session.TriggerMode == VoiceTriggerMode.ClickToToggle)
+            {
+                AppLogger.Info($"Toggling off voice shortcut on session teardown: Shortcut='{session.Shortcut}'", "MainViewModel");
+                NativeInputSender.SendShortcutClick(session.Shortcut);
             }
         }
     }
@@ -394,6 +427,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        _bluetoothManager.ConnectionStatusChanged -= OnConnectionStatusChanged;
+        _bluetoothManager.VoiceSessionStarted -= OnVoiceSessionStarted;
+        _bluetoothManager.VoiceSessionEnded -= OnVoiceSessionEnded;
+        _bluetoothManager.VoiceButtonPressed -= OnVoiceButtonPressed;
+
         ReleaseHeldVoiceShortcut();
         _voiceKeyGuard.Dispose();
         StopRepeatTimer();

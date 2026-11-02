@@ -72,6 +72,8 @@ public partial class App : Application
             if (!_configService.Current.HasCompletedOnboarding)
             {
                 AppLogger.Info("First-time setup was not completed, shutting down application.", "App");
+                mainWindow.IsExplicitExit = true;
+                mainWindow.Close();
                 Shutdown();
                 return;
             }

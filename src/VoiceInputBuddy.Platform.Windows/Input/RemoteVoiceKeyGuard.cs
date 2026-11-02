@@ -9,17 +9,21 @@ namespace VoiceInputBuddy.Platform.Windows.Input;
 /// <summary>Stops a verified remote's held F5 from contaminating its IME chord.</summary>
 public sealed class RemoteVoiceKeyGuard(Func<bool> voiceSessionActive) : IDisposable
 {
+    private const long MaxHoldDurationMs = 30000; // 30s safety timeout to prevent permanent suppression
+
     private delegate IntPtr HookProc(int code, IntPtr message, IntPtr data);
     private IntPtr _hook;
     private volatile bool _armed;
     private long _armedAt;
     private bool _ownsF5;
+    private long _holdStartedAt;
     private int _blockedDowns;
     private int _blockedUps;
 
     public void BeginShortcutHold(string shortcut)
     {
         _ownsF5 = NativeInputSender.TryParseShortcut(shortcut, out _, out var key) && key == 0x74;
+        _holdStartedAt = Environment.TickCount64;
         _blockedDowns = _blockedUps = 0;
     }
 
@@ -83,9 +87,16 @@ public sealed class RemoteVoiceKeyGuard(Func<bool> voiceSessionActive) : IDispos
                     // can release the injected hold before our balanced key-up.
                     if (_ownsF5)
                     {
-                        if (message.ToInt64() is 0x101 or 0x105) _blockedUps++;
-                        else _blockedDowns++;
-                        return (IntPtr)1;
+                        if ((Environment.TickCount64 - _holdStartedAt) > MaxHoldDurationMs)
+                        {
+                            _ownsF5 = false;
+                        }
+                        else
+                        {
+                            if (message.ToInt64() is 0x101 or 0x105) _blockedUps++;
+                            else _blockedDowns++;
+                            return (IntPtr)1;
+                        }
                     }
                     if (!IsSuppressionEnabled) return CallNextHookEx(_hook, code, message, data);
                     bool sessionActive = voiceSessionActive();
@@ -106,12 +117,29 @@ public sealed class RemoteVoiceKeyGuard(Func<bool> voiceSessionActive) : IDispos
         return CallNextHookEx(_hook, code, message, data);
     }
 
+    ~RemoteVoiceKeyGuard()
+    {
+        Dispose(false);
+    }
+
     public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    private void Dispose(bool disposing)
     {
         EndShortcutHold();
         _armed = false;
-        if (_hook != IntPtr.Zero) UnhookWindowsHookEx(_hook);
-        _hook = IntPtr.Zero;
-        GC.KeepAlive(_rootedCallback);
+        if (_hook != IntPtr.Zero)
+        {
+            UnhookWindowsHookEx(_hook);
+            _hook = IntPtr.Zero;
+        }
+        if (disposing)
+        {
+            GC.KeepAlive(_rootedCallback);
+        }
     }
 }

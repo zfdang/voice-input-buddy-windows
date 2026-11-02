@@ -535,4 +535,101 @@ public class AudioDecoderAndProtocolTests
         Assert.False(VoiceInputBuddy.Platform.Windows.Input.RawInputReceiver.EvaluateDeviceMatch(
             targetContainer, IntPtr.Zero, remotePath));
     }
+
+    [Fact]
+    public void PcmPostprocessor_BinomialFilter_SmoothesSamplesAndScalesGain()
+    {
+        var postprocessor = new PcmPostprocessor();
+        short[] samples = [1000, 2000, 3000];
+
+        postprocessor.Process(samples, 1.0f);
+
+        // sample 0: value=1000, last=1000, beforeLast=1000 -> (1000+2000+1000)>>2 = 1000
+        Assert.Equal(1000, samples[0]);
+        // sample 1: value=2000, last=1000, beforeLast=1000 -> (1000+2000+2000)>>2 = 1250
+        Assert.Equal(1250, samples[1]);
+        // sample 2: value=3000, last=2000, beforeLast=1000 -> (1000+4000+3000)>>2 = 2000
+        Assert.Equal(2000, samples[2]);
+
+        // Test clipping
+        short[] loud = [30000, 30000];
+        postprocessor.Reset();
+        postprocessor.Process(loud, 2.0f);
+        Assert.Equal(32767, loud[0]);
+    }
+
+    [Fact]
+    public void G9N9NProtocol_Report2_NonZeroUnmapped_ReturnsFalse()
+    {
+        // Report ID 2 with non-zero usage 0x9999 that is unmapped in G9N9N ConsumerButtons
+        byte[] unmappedReport2 = [0x02, 0x99, 0x99];
+        bool parsed = G9N9NProtocol.TryParseReport(unmappedReport2, out var buttons);
+
+        // MUST return false so XiaomiProtocol or other protocol fallbacks can parse it!
+        Assert.False(parsed);
+        Assert.Empty(buttons);
+    }
+
+    [Fact]
+    public void XiaomiProtocol_OddLengthReport_WithReportId_ParsesSuccessfully()
+    {
+        // Odd length: 1 byte report ID (2) + 2 bytes usage 0x0041 (OK button)
+        byte[] xiaomiReport = [0x02, 0x41, 0x00];
+        bool parsed = XiaomiProtocol.TryParseReport(xiaomiReport, out var buttons);
+
+        Assert.True(parsed);
+        Assert.Contains(VoiceInputBuddy.Core.Models.RemoteButton.Ok, buttons);
+    }
+
+    [Fact]
+    public void ConfigService_CorruptFileQuarantineAndBackupFallback()
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(), $"vib-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            string mainFile = Path.Combine(tempDir, "config.json");
+            string backupFile = Path.Combine(tempDir, "config.json.bak");
+
+            // Write valid backup with selected device
+            File.WriteAllText(backupFile, "{\"SelectedDeviceId\":\"device_123\"}");
+            // Write corrupt main file
+            File.WriteAllText(mainFile, "{ this is invalid json !!!");
+
+            var configService = new VoiceInputBuddy.Core.Config.ConfigService(mainFile);
+
+            // Successfully restored from backup
+            Assert.Equal("device_123", configService.Current.SelectedDeviceId);
+
+            // Corrupt file must have been quarantined
+            var corruptFiles = Directory.GetFiles(tempDir, "config.json.corrupt.*");
+            Assert.Single(corruptFiles);
+        }
+        finally
+        {
+            Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
+    public void ConfigService_Deserialization_HandlesNullSubObjects()
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(), $"vib-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            string mainFile = Path.Combine(tempDir, "config.json");
+            // JSON where InputTool and Devices are null
+            File.WriteAllText(mainFile, "{\"InputTool\":null,\"Devices\":null}");
+
+            var configService = new VoiceInputBuddy.Core.Config.ConfigService(mainFile);
+
+            Assert.NotNull(configService.Current.InputTool);
+            Assert.NotNull(configService.Current.Devices);
+        }
+        finally
+        {
+            Directory.Delete(tempDir, true);
+        }
+    }
 }

@@ -20,7 +20,27 @@ public static class StartupService
             if (string.IsNullOrEmpty(val)) return false;
             string? currentExe = Environment.ProcessPath;
             if (string.IsNullOrEmpty(currentExe)) return true;
-            return val.Contains(currentExe, StringComparison.OrdinalIgnoreCase);
+
+            string registeredExe = val.Trim();
+            if (registeredExe.StartsWith('"'))
+            {
+                int endQuote = registeredExe.IndexOf('"', 1);
+                if (endQuote > 1) registeredExe = registeredExe[1..endQuote];
+            }
+            else
+            {
+                int space = registeredExe.IndexOf(' ');
+                if (space > 0) registeredExe = registeredExe[..space];
+            }
+
+            try
+            {
+                return string.Equals(Path.GetFullPath(registeredExe), Path.GetFullPath(currentExe), StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return val.Contains(currentExe, StringComparison.OrdinalIgnoreCase);
+            }
         }
         catch (Exception ex)
         {
@@ -33,7 +53,7 @@ public static class StartupService
     {
         try
         {
-            using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, true);
+            using var key = Registry.CurrentUser.CreateSubKey(RunKeyPath, true);
             if (key == null) return false;
 
             if (enable)

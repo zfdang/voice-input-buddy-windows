@@ -19,6 +19,7 @@ public class ConvertersAndViewModelTests
         public bool IsConnected => false;
         public bool IsReady => false;
         public bool IsStreaming => false;
+        public float CurrentGain { get; set; } = 1.0f;
         public BluetoothSessionState SessionState => BluetoothSessionState.Idle;
         public string ConnectedDeviceName => string.Empty;
         public Guid? ConnectedDeviceContainerId => null;
